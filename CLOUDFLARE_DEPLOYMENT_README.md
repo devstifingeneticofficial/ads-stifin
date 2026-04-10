@@ -1,6 +1,10 @@
-# 📦 Deployment Guide untuk Cloudflare Pages + VPS Database
+# 📦 Deployment Guide: Cloudflare Pages + VPS Database
 
 Panduan lengkap untuk deploy aplikasi **ads-stifin** ke **Cloudflare Pages** dengan database di **VPS pribadi**.
+
+> 🚀 **TL;DR?** Baca [PAGES_QUICK_START.md](./PAGES_QUICK_START.md) (3 langkah, ~1 jam)
+
+> ⚠️ **Pages atau Workers?** Jawabnya: **PAGES** - auto-deploy, unlimited free tier, cocok Next.js
 
 ---
 
