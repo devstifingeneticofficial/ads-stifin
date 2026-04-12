@@ -160,6 +160,7 @@ export default function AdvertiserDashboard() {
   // WhatsApp Template states
   const [notifTemplates, setNotifTemplates] = useState<NotificationTemplate[]>([])
   const [editingNotifTemplate, setEditingNotifTemplate] = useState<NotificationTemplate | null>(null)
+  const [waChannelLink, setWaChannelLink] = useState("")
 
   // Action States
   const [selectedAd, setSelectedAd] = useState<AdRequest | null>(null)
@@ -201,13 +202,22 @@ export default function AdvertiserDashboard() {
     } catch { /* silent */ }
   }, [])
 
+  const fetchWaChannelLink = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings")
+      const data = await res.json()
+      setWaChannelLink(data.value || "")
+    } catch { /* silent */ }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchAdRequests()
       fetchBriefTemplates()
       fetchNotifTemplates()
+      fetchWaChannelLink()
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates])
+  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink])
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -294,6 +304,20 @@ export default function AdvertiserDashboard() {
       fetchNotifTemplates()
       setEditingNotifTemplate(null)
     } catch { toast.error("Gagal mengupdate") }
+    finally { setIsSubmitting(false) }
+  }
+
+  const handleSaveWaChannelLink = async () => {
+    setIsSubmitting(true)
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: waChannelLink }),
+      })
+      if (!res.ok) throw new Error("Gagal")
+      toast.success("Link Channel WA diperbarui")
+    } catch { toast.error("Gagal menyimpan link") }
     finally { setIsSubmitting(false) }
   }
 
@@ -426,11 +450,9 @@ export default function AdvertiserDashboard() {
 
                        <div className="flex items-center justify-between pt-2">
                           <div className="flex gap-2">
-                             {ad.contentUrl && (
-                                <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2">
-                                   <a href={ad.contentUrl} target="_blank"><Download className="h-4 w-4" /> Download Konten</a>
-                                </Button>
-                             )}
+                             <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                                <a href={waChannelLink || "#"} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" /> LIHAT KONTEN (WA)</a>
+                             </Button>
                              {ad.paymentProofUrl && (
                                 <Button size="sm" variant="ghost" asChild className="h-8 font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
                                    <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
@@ -512,6 +534,33 @@ export default function AdvertiserDashboard() {
             </div>
             <Badge variant="outline" className="text-emerald-600 border-emerald-100 bg-emerald-50">Emerald Green Toggle</Badge>
           </div>
+
+          <Card className="shadow-none border-slate-200 bg-slate-50/30">
+            <CardHeader className="pb-3 px-4 pt-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
+                  <MessageSquare className="h-4 w-4" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-semibold">Tautan Channel WhatsApp</CardTitle>
+                  <CardDescription className="text-[10px] mt-0.5">Link ini akan digunakan promotor untuk melihat/mengunduh konten</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pb-4 px-4">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="https://whatsapp.com/channel/..." 
+                  value={waChannelLink}
+                  onChange={(e) => setWaChannelLink(e.target.value)}
+                  className="bg-white text-xs h-9"
+                />
+                <Button size="sm" className="h-9 px-4 font-semibold" onClick={handleSaveWaChannelLink} disabled={isSubmitting}>
+                  {isSubmitting ? "..." : "Simpan"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[

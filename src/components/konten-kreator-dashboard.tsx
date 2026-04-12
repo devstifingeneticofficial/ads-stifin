@@ -194,7 +194,7 @@ export default function KontenKreatorDashboard() {
 
   // Action states
   const [processingId, setProcessingId] = useState<string | null>(null)
-  const [uploadDialogId, setUploadDialogId] = useState<string | null>(null)
+  const [completeConfirmId, setCompleteConfirmId] = useState<string | null>(null)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
 
@@ -276,7 +276,6 @@ export default function KontenKreatorDashboard() {
   const unreadNotifCount = notifications.filter((n) => !n.read).length
 
   // ── Process content (MENUNGGU_KONTEN → DIPROSES) ─────────────────────────
-
   const handleProcessContent = async (id: string) => {
     setProcessingId(id)
     try {
@@ -297,49 +296,24 @@ export default function KontenKreatorDashboard() {
     }
   }
 
-  // ── Upload content (DIPROSES → KONTEN_SELESAI) ───────────────────────────
-
-  const handleUploadContent = async () => {
-    if (!uploadDialogId || !uploadFile) {
-      toast.error("Pilih file konten terlebih dahulu")
-      return
-    }
-
+  // ── Complete content (DIPROSES → KONTEN_SELESAI) ─────────────────────────
+  const handleMarkComplete = async (id: string) => {
     setUploading(true)
     try {
-      // 1. Upload file
-      const formData = new FormData()
-      formData.append("file", uploadFile)
-      const uploadRes = await fetch("/api/upload", {
+      const res = await fetch(`/api/ad-requests/${id}/upload-content`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentUrl: "WA_CHANNEL" }), // Placeholder URL
       })
-      if (!uploadRes.ok) throw new Error("Gagal upload file")
-      const { url } = await uploadRes.json()
-
-      // 2. Submit content URL
-      const contentRes = await fetch(
-        `/api/ad-requests/${uploadDialogId}/upload-content`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contentUrl: url }),
-        }
-      )
-      if (!contentRes.ok) {
-        const err = await contentRes.json()
-        throw new Error(err.error || "Gagal mengupload konten")
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal memperbarui status")
       }
-
-      toast.success("Konten berhasil diupload!")
-      setUploadDialogId(null)
-      setUploadFile(null)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
+      toast.success("Status iklan diperbarui!")
+      setCompleteConfirmId(null)
       fetchAdRequests()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Gagal mengupload konten"
+      const message = err instanceof Error ? err.message : "Gagal memperbarui status"
       toast.error(message)
     } finally {
       setUploading(false)
@@ -546,19 +520,11 @@ export default function KontenKreatorDashboard() {
                 </div>
               )}
 
-              {/* Content URL if already uploaded */}
-              {ad.contentUrl && (
-                <div className="text-sm flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-100">
-                  <span className="text-muted-foreground font-medium">Link Konten: </span>
-                  <a
-                    href={ad.contentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline inline-flex items-center gap-1 font-semibold"
-                  >
-                    <Eye className="h-3 w-3" />
-                    Lihat Konten Aktif
-                  </a>
+              {/* Content URL Info */}
+              {ad.contentUrl === "WA_CHANNEL" && (
+                <div className="text-sm flex items-center gap-2 bg-emerald-50 p-2 rounded border border-emerald-100 italic text-emerald-700">
+                  <CheckCircle className="h-3 w-3" />
+                  Konten sudah diupload ke Channel WhatsApp
                 </div>
               )}
 
@@ -576,15 +542,48 @@ export default function KontenKreatorDashboard() {
                   </Button>
                 )}
                 {ad.status === "DIPROSES" && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="font-semibold text-xs"
-                    onClick={() => setUploadDialogId(ad.id)}
+                  <Dialog
+                    open={completeConfirmId === ad.id}
+                    onOpenChange={(open) => setCompleteConfirmId(open ? ad.id : null)}
                   >
-                    <Upload className="h-4 w-4 mr-2" />
-                    UPLOAD HASIL KONTEN
-                  </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={() => setCompleteConfirmId(ad.id)}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      KONTEN SELESAI
+                    </Button>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="font-bold">Konfirmasi Upload Konten</DialogTitle>
+                        <DialogDescription className="text-xs pt-1">
+                          Apakah Anda sudah upload konten di <strong>channel WA</strong> untuk kota <strong>{ad.city}</strong>?
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter className="flex sm:justify-center gap-2 pt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 font-bold text-rose-600 border-rose-200 bg-rose-50"
+                          onClick={() => setCompleteConfirmId(null)}
+                          disabled={uploading}
+                        >
+                          BELUM
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="flex-1 font-bold bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => handleMarkComplete(ad.id)}
+                          disabled={uploading}
+                        >
+                          {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                          SUDAH
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </div>
             </CardContent>

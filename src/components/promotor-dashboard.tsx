@@ -209,6 +209,7 @@ export default function PromotorDashboard() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [waLink, setWaLink] = useState("")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -242,12 +243,416 @@ export default function PromotorDashboard() {
     }
   }, [])
 
+  const fetchWaLink = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings")
+      const data = await res.json()
+      setWaLink(data.value || "")
+    } catch { /* silent */ }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchAdRequests()
       fetchGlobalAds()
+      fetchWaLink()
     }
-  }, [user, fetchAdRequests, fetchGlobalAds])
+  }, [user, fetchAdRequests, fetchGlobalAds, fetchWaLink])
+
+  const renderAdCards = (tabType: "PAY" | "CONTENT" | "PROCESS" | "DONE") => {
+    const filtered = adRequests.filter((ad) => {
+      if (tabType === "PAY") return ad.status === "MENUNGGU_PEMBAYARAN"
+      if (tabType === "CONTENT") return ["MENUNGGU_KONTEN", "DIPROSES"].includes(ad.status)
+      if (tabType === "PROCESS") return ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(ad.status)
+      if (tabType === "DONE") return ad.status === "SELESAI"
+      return true
+    })
+
+    if (filtered.length === 0) {
+      return (
+        <Card className="border-dashed shadow-none bg-slate-50/50">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+            <Megaphone className="h-10 w-10 mb-3 opacity-20" />
+            <p className="text-sm italic">Belum ada pengajuan di kategori ini.</p>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        {filtered.map((ad) => (
+          <Card key={ad.id}>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="space-y-1">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    {ad.city}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Dibuat {formatDate(ad.createdAt)}
+                  </CardDescription>
+                </div>
+                {getStatusBadge(ad.status)}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Info grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div className="space-y-1">
+                  <p className="text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    Tanggal Mulai
+                  </p>
+                  <p className="font-medium">
+                    {formatDate(ad.startDate)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Durasi
+                  </p>
+                  <p className="font-medium">{ad.durationDays} hari</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" />
+                    Budget/Hari
+                  </p>
+                  <p className="font-medium">
+                    {formatRupiah(ad.dailyBudget)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-muted-foreground flex items-center gap-1">
+                    <DollarSign className="h-3 w-3" />
+                    Total Bayar
+                  </p>
+                  <p className="font-medium">
+                    {formatRupiah(ad.totalPayment)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Scheduled Info Section */}
+              {ad.adStartDate && (
+                <div className={`rounded-lg p-3 border text-sm space-y-2 ${
+                  ad.status === "IKLAN_DIJADWALKAN" 
+                    ? "bg-blue-50 border-blue-100 text-blue-800"
+                    : "bg-muted/30 border-muted"
+                }`}>
+                  <div className="flex items-center gap-2 font-medium">
+                    <CalendarCheck className="h-4 w-4" />
+                    Jadwal Tayang Iklan
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="opacity-70">Mulai:</span>
+                      <span className="font-semibold">{new Date(ad.adStartDate).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="opacity-70">Berakhir:</span>
+                      <span className="font-semibold">{new Date(ad.adEndDate!).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+
+              {/* Action buttons based on status */}
+              <div className="flex flex-wrap gap-2">
+                {/* MENUNGGU_PEMBAYARAN → Upload bukti transfer */}
+                {ad.status === "MENUNGGU_PEMBAYARAN" && (
+                  <>
+                    <Dialog
+                      open={uploadDialogId === ad.id}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setUploadDialogId(ad.id)
+                        } else {
+                          setUploadDialogId(null)
+                          setUploadFile(null)
+                        }
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">
+                          <Upload className="h-4 w-4 mr-2" />
+                          Upload Bukti Transfer
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Upload Bukti Transfer</DialogTitle>
+                          <DialogDescription>
+                            Upload bukti pembayaran untuk pengajuan iklan di{" "}
+                            <strong>{ad.city}</strong>
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-2">
+                          <div className="rounded-lg bg-muted/50 p-4 space-y-1">
+                            <p className="text-sm text-muted-foreground">
+                              Total Pembayaran
+                            </p>
+                            <p className="text-xl font-bold">
+                              {formatRupiah(ad.totalPayment)}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`proof-${ad.id}`}>
+                              File Bukti Transfer
+                            </Label>
+                            <Input
+                              id={`proof-${ad.id}`}
+                              ref={fileInputRef}
+                              type="file"
+                              accept="image/*,.pdf"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) setUploadFile(file)
+                              }}
+                            />
+                            {uploadFile && (
+                              <p className="text-xs text-muted-foreground">
+                                Dipilih: {uploadFile.name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setUploadDialogId(null)
+                              setUploadFile(null)
+                            }}
+                            disabled={uploading}
+                          >
+                            Batal
+                          </Button>
+                          <Button
+                            onClick={handleUploadProof}
+                            disabled={uploading || !uploadFile}
+                          >
+                            {uploading ? "Mengupload..." : "Upload"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+
+                    <Button 
+                      variant="secondary" 
+                      size="sm"
+                      onClick={() => handleOpenEdit(ad)}
+                    >
+                      Edit
+                    </Button>
+
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      onClick={() => handleDelete(ad.id)}
+                      disabled={isDeleting === ad.id}
+                    >
+                      {isDeleting === ad.id ? "Menghapus..." : "Hapus"}
+                    </Button>
+                  </>
+                )}
+
+                {/* KONTEN_SELESAI or later → WhatsApp Channel */}
+                {isAtOrAfter(ad.status, "KONTEN_SELESAI") && (
+                  <Button variant="outline" size="sm" asChild className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold hover:text-emerald-800">
+                    <a href={waLink || "#"} target="_blank" rel="noopener noreferrer">
+                      <Download className="h-4 w-4 mr-2" />
+                      LIHAT KONTEN (WA)
+                    </a>
+                  </Button>
+                )}
+
+                {/* Laporan Promotor (Jumlah Klien) - Muncul setelah Advertiser input laporan (SELESAI) */}
+                {ad.status === "SELESAI" && ad.adReport && (
+                  <Dialog
+                    open={resultDialogId === ad.id}
+                    onOpenChange={(open) => {
+                      if (open) {
+                        setResultDialogId(ad.id)
+                        // Pre-fill if result exists
+                        if (ad.promotorResult) {
+                          setResultClients(
+                            String(ad.promotorResult.totalClients)
+                          )
+                          setResultNote(ad.promotorResult.note || "")
+                        } else {
+                          setResultClients("")
+                          setResultNote("")
+                        }
+                      } else {
+                        setResultDialogId(null)
+                      }
+                    }}
+                  >
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className={ad.promotorResult?.status === "VALID" ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:text-amber-800"}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        {ad.promotorResult?.status === "VALID" ? "Ajukan Revisi" : "Input Jumlah Klien"}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>{ad.promotorResult?.status === "VALID" ? "Ajukan Revisi Laporan" : "Input Laporan Klien"}</DialogTitle>
+                        <DialogDescription>
+                          {ad.promotorResult?.status === "VALID" 
+                            ? "Anda sedang mengajukan revisi untuk laporan yang sudah divalidasi."
+                            : `Laporkan jumlah klien yang didapat dari iklan di ${ad.city}`}
+                        </DialogDescription>
+                      </DialogHeader>
+                      {ad.promotorResult?.status === "VALID" && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 flex items-start gap-2 mb-2">
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                          <p>
+                            <strong>Peringatan Revisi:</strong> Mengubah data akan menghapus status <strong>Valid</strong> dan laporan Anda akan memerlukan persetujuan ulang dari Admin STIFIn.
+                          </p>
+                        </div>
+                      )}
+                      <div className="space-y-4 py-2">
+                        <div className="space-y-2">
+                          <Label htmlFor={`clients-${ad.id}`}>
+                            Jumlah Klien
+                          </Label>
+                          <Input
+                            id={`clients-${ad.id}`}
+                            type="number"
+                            placeholder="Masukkan jumlah klien..."
+                            min={0}
+                            value={resultClients}
+                            onChange={(e) =>
+                              setResultClients(e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`note-${ad.id}`}>Catatan</Label>
+                          <Input
+                            id={`note-${ad.id}`}
+                            type="text"
+                            placeholder="Catatan tambahan (opsional)..."
+                            value={resultNote}
+                            onChange={(e) =>
+                              setResultNote(e.target.value)
+                            }
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          variant="outline"
+                          onClick={() => setResultDialogId(null)}
+                          disabled={submittingResult}
+                        >
+                          Batal
+                        </Button>
+                        <Button
+                          onClick={handleSubmitResult}
+                          disabled={submittingResult}
+                        >
+                          {submittingResult ? "Menyimpan..." : (ad.promotorResult?.status === "VALID" ? "Simpan Revisi" : "Simpan Hasil")}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+
+              {/* Promotor result display */}
+              {ad.promotorResult && isAtOrAfter(ad.status, "KONTEN_SELESAI") && (
+                <div className="rounded-lg bg-muted/50 p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2 text-sm font-medium">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      Hasil Promotor
+                    </div>
+                    {ad.promotorResult.status === "VALID" ? (
+                      <Badge className="bg-green-100 text-green-800 border-green-300">
+                        Sudah Valid
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                        Menunggu Validasi
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">
+                        Jumlah Klien:{" "}
+                      </span>
+                      <span className="font-medium">
+                        {ad.promotorResult.totalClients}
+                      </span>
+                    </div>
+                    {ad.promotorResult.note && (
+                      <div>
+                        <span className="text-muted-foreground">
+                          Catatan:{" "}
+                        </span>
+                        <span className="font-medium">
+                          {ad.promotorResult.note}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Ad Report display */}
+              {ad.adReport && (
+                <div className="rounded-lg border p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <AlertCircle className="h-4 w-4 text-blue-600" />
+                    Laporan Iklan
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                    {ad.adReport.cpr !== null && (
+                      <div>
+                        <span className="text-muted-foreground">
+                          CPR:{" "}
+                        </span>
+                        <span className="font-medium">
+                          {formatRupiah(Math.round(ad.adReport.cpr))}
+                        </span>
+                      </div>
+                    )}
+                    {ad.adReport.totalLeads !== null && (
+                      <div>
+                        <span className="text-muted-foreground">
+                          Total Leads:{" "}
+                        </span>
+                        <span className="font-medium">
+                          {ad.adReport.totalLeads}
+                        </span>
+                      </div>
+                    )}
+                    {ad.adReport.amountSpent !== null && (
+                      <div>
+                        <span className="text-muted-foreground">
+                          Total Spend:{" "}
+                        </span>
+                        <span className="font-medium">
+                          {formatRupiah(ad.adReport.amountSpent)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
 
   // ── Computed stats ─────────────────────────────────────────────────────────
 
@@ -696,391 +1101,51 @@ export default function PromotorDashboard() {
             </Dialog>
           </div>
 
-          {/* Ad request cards */}
-          {adRequests.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Megaphone className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">Belum ada pengajuan</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Klik tombol &quot;Buat Pengajuan Iklan&quot; untuk memulai
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {adRequests.map((ad) => (
-                <Card key={ad.id}>
-                  <CardHeader>
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <div className="space-y-1">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <DollarSign className="h-4 w-4 text-muted-foreground" />
-                          {ad.city}
-                        </CardTitle>
-                        <CardDescription className="text-xs">
-                          Dibuat {formatDate(ad.createdAt)}
-                        </CardDescription>
-                      </div>
-                      {getStatusBadge(ad.status)}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Info grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Tanggal Mulai
-                        </p>
-                        <p className="font-medium">
-                          {formatDate(ad.startDate)}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Durasi
-                        </p>
-                        <p className="font-medium">{ad.durationDays} hari</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <DollarSign className="h-3 w-3" />
-                          Budget/Hari
-                        </p>
-                        <p className="font-medium">
-                          {formatRupiah(ad.dailyBudget)}
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <DollarSign className="h-3 w-3" />
-                          Total Bayar
-                        </p>
-                        <p className="font-medium">
-                          {formatRupiah(ad.totalPayment)}
-                        </p>
-                      </div>
-                    </div>
+          {/* Ad request sub-tabs */}
+          <Tabs defaultValue="PAY" className="w-full space-y-6">
+            <TabsList className="bg-slate-100/50 p-1 border h-auto flex-wrap gap-1">
+              <TabsTrigger value="PAY" className="gap-2 text-[11px] font-bold">
+                Pembayaran
+                {adRequests.filter(r => r.status === "MENUNGGU_PEMBAYARAN").length > 0 && (
+                  <Badge variant="outline" className="h-4 px-1 text-[9px] bg-amber-100 text-amber-700 border-amber-200">
+                    {adRequests.filter(r => r.status === "MENUNGGU_PEMBAYARAN").length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="CONTENT" className="gap-2 text-[11px] font-bold">
+                Konten
+                {adRequests.filter(r => ["MENUNGGU_KONTEN", "DIPROSES"].includes(r.status)).length > 0 && (
+                  <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
+                    {adRequests.filter(r => ["MENUNGGU_KONTEN", "DIPROSES"].includes(r.status)).length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="PROCESS" className="gap-2 text-[11px] font-bold">
+                Diproses
+                {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(r.status)).length > 0 && (
+                  <Badge variant="outline" className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border-purple-200">
+                    {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(r.status)).length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="DONE" className="gap-2 text-[11px] font-bold">
+                Selesai
+              </TabsTrigger>
+            </TabsList>
 
-                    {/* Scheduled Info Section */}
-                    {ad.adStartDate && (
-                      <div className={`rounded-lg p-3 border text-sm space-y-2 ${
-                        ad.status === "IKLAN_DIJADWALKAN" 
-                          ? "bg-blue-50 border-blue-100 text-blue-800"
-                          : "bg-muted/30 border-muted"
-                      }`}>
-                        <div className="flex items-center gap-2 font-medium">
-                          <CalendarCheck className="h-4 w-4" />
-                          Jadwal Tayang Iklan
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                          <div className="flex justify-between">
-                            <span className="opacity-70">Mulai:</span>
-                            <span className="font-semibold">{new Date(ad.adStartDate).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="opacity-70">Berakhir:</span>
-                            <span className="font-semibold">{new Date(ad.adEndDate!).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-
-                    {/* Action buttons based on status */}
-                    <div className="flex flex-wrap gap-2">
-                      {/* MENUNGGU_PEMBAYARAN → Upload bukti transfer */}
-                      {ad.status === "MENUNGGU_PEMBAYARAN" && (
-                        <>
-                          <Dialog
-                            open={uploadDialogId === ad.id}
-                            onOpenChange={(open) => {
-                              if (open) {
-                                setUploadDialogId(ad.id)
-                              } else {
-                                setUploadDialogId(null)
-                                setUploadFile(null)
-                              }
-                            }}
-                          >
-                            <DialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                <Upload className="h-4 w-4 mr-2" />
-                                Upload Bukti Transfer
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="sm:max-w-md">
-                              <DialogHeader>
-                                <DialogTitle>Upload Bukti Transfer</DialogTitle>
-                                <DialogDescription>
-                                  Upload bukti pembayaran untuk pengajuan iklan di{" "}
-                                  <strong>{ad.city}</strong>
-                                </DialogDescription>
-                              </DialogHeader>
-                              <div className="space-y-4 py-2">
-                                <div className="rounded-lg bg-muted/50 p-4 space-y-1">
-                                  <p className="text-sm text-muted-foreground">
-                                    Total Pembayaran
-                                  </p>
-                                  <p className="text-xl font-bold">
-                                    {formatRupiah(ad.totalPayment)}
-                                  </p>
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor={`proof-${ad.id}`}>
-                                    File Bukti Transfer
-                                  </Label>
-                                  <Input
-                                    id={`proof-${ad.id}`}
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="image/*,.pdf"
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0]
-                                      if (file) setUploadFile(file)
-                                    }}
-                                  />
-                                  {uploadFile && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Dipilih: {uploadFile.name}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <DialogFooter>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => {
-                                    setUploadDialogId(null)
-                                    setUploadFile(null)
-                                  }}
-                                  disabled={uploading}
-                                >
-                                  Batal
-                                </Button>
-                                <Button
-                                  onClick={handleUploadProof}
-                                  disabled={uploading || !uploadFile}
-                                >
-                                  {uploading ? "Mengupload..." : "Upload"}
-                                </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-
-                          <Button 
-                            variant="secondary" 
-                            size="sm"
-                            onClick={() => handleOpenEdit(ad)}
-                          >
-                            Edit
-                          </Button>
-
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={() => handleDelete(ad.id)}
-                            disabled={isDeleting === ad.id}
-                          >
-                            {isDeleting === ad.id ? "Menghapus..." : "Hapus"}
-                          </Button>
-                        </>
-                      )}
-
-                      {/* KONTEN_SELESAI or later → Download konten */}
-                      {isAtOrAfter(ad.status, "KONTEN_SELESAI") &&
-                        ad.contentUrl && (
-                          <Button variant="outline" size="sm" asChild>
-                            <a href={ad.contentUrl} download>
-                              <Download className="h-4 w-4 mr-2" />
-                              Download Konten
-                            </a>
-                          </Button>
-                        )}
-
-                      {/* Laporan Promotor (Jumlah Klien) - Muncul setelah Advertiser input laporan (SELESAI) */}
-                      {ad.status === "SELESAI" && ad.adReport && (
-                        <Dialog
-                          open={resultDialogId === ad.id}
-                          onOpenChange={(open) => {
-                            if (open) {
-                              setResultDialogId(ad.id)
-                              // Pre-fill if result exists
-                              if (ad.promotorResult) {
-                                setResultClients(
-                                  String(ad.promotorResult.totalClients)
-                                )
-                                setResultNote(ad.promotorResult.note || "")
-                              } else {
-                                setResultClients("")
-                                setResultNote("")
-                              }
-                            } else {
-                              setResultDialogId(null)
-                            }
-                          }}
-                        >
-                          <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" className={ad.promotorResult?.status === "VALID" ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:text-amber-800"}>
-                              <FileText className="h-4 w-4 mr-2" />
-                              {ad.promotorResult?.status === "VALID" ? "Ajukan Revisi" : "Input Jumlah Klien"}
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="sm:max-w-md">
-                            <DialogHeader>
-                              <DialogTitle>{ad.promotorResult?.status === "VALID" ? "Ajukan Revisi Laporan" : "Input Laporan Klien"}</DialogTitle>
-                              <DialogDescription>
-                                {ad.promotorResult?.status === "VALID" 
-                                  ? "Anda sedang mengajukan revisi untuk laporan yang sudah divalidasi."
-                                  : `Laporkan jumlah klien yang didapat dari iklan di ${ad.city}`}
-                              </DialogDescription>
-                            </DialogHeader>
-                            {ad.promotorResult?.status === "VALID" && (
-                              <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 flex items-start gap-2 mb-2">
-                                <AlertCircle className="h-4 w-4 shrink-0" />
-                                <p>
-                                  <strong>Peringatan Revisi:</strong> Mengubah data akan menghapus status <strong>Valid</strong> dan laporan Anda akan memerlukan persetujuan ulang dari Admin STIFIn.
-                                </p>
-                              </div>
-                            )}
-                            <div className="space-y-4 py-2">
-                              <div className="space-y-2">
-                                <Label htmlFor={`clients-${ad.id}`}>
-                                  Jumlah Klien
-                                </Label>
-                                <Input
-                                  id={`clients-${ad.id}`}
-                                  type="number"
-                                  placeholder="Masukkan jumlah klien..."
-                                  min={0}
-                                  value={resultClients}
-                                  onChange={(e) =>
-                                    setResultClients(e.target.value)
-                                  }
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor={`note-${ad.id}`}>Catatan</Label>
-                                <Input
-                                  id={`note-${ad.id}`}
-                                  type="text"
-                                  placeholder="Catatan tambahan (opsional)..."
-                                  value={resultNote}
-                                  onChange={(e) =>
-                                    setResultNote(e.target.value)
-                                  }
-                                />
-                              </div>
-                            </div>
-                            <DialogFooter>
-                              <Button
-                                variant="outline"
-                                onClick={() => setResultDialogId(null)}
-                                disabled={submittingResult}
-                              >
-                                Batal
-                              </Button>
-                              <Button
-                                onClick={handleSubmitResult}
-                                disabled={submittingResult}
-                              >
-                                {submittingResult ? "Menyimpan..." : (ad.promotorResult?.status === "VALID" ? "Simpan Revisi" : "Simpan Hasil")}
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                      )}
-                    </div>
-
-                    {/* Promotor result display */}
-                    {ad.promotorResult && isAtOrAfter(ad.status, "KONTEN_SELESAI") && (
-                      <div className="rounded-lg bg-muted/50 p-4 space-y-2">
-                        <div className="flex items-center justify-between gap-2 text-sm font-medium">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            Hasil Promotor
-                          </div>
-                          {ad.promotorResult.status === "VALID" ? (
-                            <Badge className="bg-green-100 text-green-800 border-green-300">
-                              Sudah Valid
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
-                              Menunggu Validasi
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">
-                              Jumlah Klien:{" "}
-                            </span>
-                            <span className="font-medium">
-                              {ad.promotorResult.totalClients}
-                            </span>
-                          </div>
-                          {ad.promotorResult.note && (
-                            <div>
-                              <span className="text-muted-foreground">
-                                Catatan:{" "}
-                              </span>
-                              <span className="font-medium">
-                                {ad.promotorResult.note}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Ad Report display */}
-                    {ad.adReport && (
-                      <div className="rounded-lg border p-4 space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <AlertCircle className="h-4 w-4 text-blue-600" />
-                          Laporan Iklan
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-                          {ad.adReport.cpr !== null && (
-                            <div>
-                              <span className="text-muted-foreground">
-                                CPR:{" "}
-                              </span>
-                              <span className="font-medium">
-                                {formatRupiah(Math.round(ad.adReport.cpr))}
-                              </span>
-                            </div>
-                          )}
-                          {ad.adReport.totalLeads !== null && (
-                            <div>
-                              <span className="text-muted-foreground">
-                                Total Leads:{" "}
-                              </span>
-                              <span className="font-medium">
-                                {ad.adReport.totalLeads}
-                              </span>
-                            </div>
-                          )}
-                          {ad.adReport.amountSpent !== null && (
-                            <div>
-                              <span className="text-muted-foreground">
-                                Total Spend:{" "}
-                              </span>
-                              <span className="font-medium">
-                                {formatRupiah(ad.adReport.amountSpent)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+            <TabsContent value="PAY" className="mt-0">
+               {renderAdCards("PAY")}
+            </TabsContent>
+            <TabsContent value="CONTENT" className="mt-0">
+               {renderAdCards("CONTENT")}
+            </TabsContent>
+            <TabsContent value="PROCESS" className="mt-0">
+               {renderAdCards("PROCESS")}
+            </TabsContent>
+            <TabsContent value="DONE" className="mt-0">
+               {renderAdCards("DONE")}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         {/* ── Riwayat Iklan Tab ──────────────────────────────────────────── */}
