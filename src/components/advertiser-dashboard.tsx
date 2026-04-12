@@ -1,27 +1,27 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
-  CalendarCheck,
+  Calendar,
   Clock,
-  FileText,
-  BarChart3,
   DollarSign,
+  FileText,
+  CalendarCheck,
   TrendingUp,
-  Plus,
-  Megaphone,
-  AlertCircle,
+  BarChart3,
   MessageSquare,
   Settings,
-  MoreVertical,
-  ExternalLink,
+  Plus,
+  ArrowRight,
   Download,
   Upload,
-  Search,
-  Building2,
-  Users,
+  ExternalLink,
+  MoreVertical,
+  CheckCircle,
+  AlertCircle,
+  Megaphone,
 } from "lucide-react"
 
 import {
@@ -46,20 +46,14 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,7 +90,8 @@ interface AdRequest {
   ppn: number
   totalPayment: number
   status: string
-  briefType: string | null
+  contentUrl: string | null
+  paymentProofUrl: string | null
   adStartDate: string | null
   adEndDate: string | null
   adReport: AdReport | null
@@ -151,10 +146,7 @@ export default function AdvertiserDashboard() {
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [loading, setLoading] = useState(true)
-
-  // Filters (Adopted from STIFIn Admin)
-  const [statusFilter, setStatusFilter] = useState<string>("ALL")
-  const [searchCity, setSearchCity] = useState("")
+  const [activeTab, setActiveTab] = useState("all")
 
   // Master Brief states
   const [briefTemplates, setBriefTemplates] = useState<BriefTemplate[]>([])
@@ -217,19 +209,6 @@ export default function AdvertiserDashboard() {
     }
   }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates])
 
-  // Logic from STIFIn Admin
-  const filteredAdRequests = useMemo(() => {
-    return adRequests.filter((r) => {
-      const matchesStatus = statusFilter === "ALL" || r.status === statusFilter
-      const matchesCity = !searchCity || r.city.toLowerCase().includes(searchCity.toLowerCase())
-      return matchesStatus && matchesCity
-    })
-  }, [adRequests, statusFilter, searchCity])
-
-  const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
-  const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
-
-  // Master Brief Handlers
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -265,25 +244,6 @@ export default function AdvertiserDashboard() {
     } catch { toast.error("Gagal menghapus") }
   }
 
-  // WA Template Handler
-  const handleUpdateNotifTemplate = async (e: React.FormEvent | null, slug: string, isActive?: boolean, message?: string) => {
-    if (e) e.preventDefault()
-    setIsSubmitting(true)
-    try {
-      const res = await fetch("/api/notification-templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, isActive, message }),
-      })
-      if (!res.ok) throw new Error("Gagal")
-      if (message !== undefined) toast.success("Pesan WA diperbarui")
-      fetchNotifTemplates()
-      setEditingNotifTemplate(null)
-    } catch { toast.error("Gagal mengupdate") }
-    finally { setIsSubmitting(false) }
-  }
-
-  // Action Handlers
   const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedAd) return
@@ -320,264 +280,267 @@ export default function AdvertiserDashboard() {
     finally { setIsSubmitting(false) }
   }
 
-  if (loading) return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-4 w-80" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    </div>
-  )
+  const handleUpdateNotifTemplate = async (e: React.FormEvent | null, slug: string, isActive?: boolean, message?: string) => {
+    if (e) e.preventDefault()
+    setIsSubmitting(true)
+    try {
+      const res = await fetch("/api/notification-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, isActive, message }),
+      })
+      if (!res.ok) throw new Error("Gagal")
+      if (message !== undefined) toast.success("Pesan WA diperbarui")
+      fetchNotifTemplates()
+      setEditingNotifTemplate(null)
+    } catch { toast.error("Gagal mengupdate") }
+    finally { setIsSubmitting(false) }
+  }
+
+  const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
+  const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
+
+  const filteredRequests = activeTab === "all" ? adRequests : adRequests.filter(r => r.status === activeTab)
+
+  if (loading) return <div className="p-8"><Skeleton className="h-40 w-full" /></div>
 
   return (
     <div className="space-y-6">
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard Advertiser</h1>
-        <p className="text-muted-foreground">Monitoring seluruh pengajuan iklan, laporan promotor, dan performa iklan</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard Advertiser</h1>
+        <p className="text-sm text-muted-foreground font-medium">Monitoring performa iklan dan kelola notifikasi</p>
       </div>
 
-      {/* ── Stats Cards (STIFIn Admin Style) ──────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-        <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
+      {/* ── Stats Cards (Standard Style) ────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card className="shadow-none border-slate-100">
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Budget Terpakai</CardTitle>
-            <DollarSign className="h-4 w-4 text-emerald-600" />
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Total Budget
+            </CardTitle>
+            <DollarSign className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-emerald-700">{formatRupiah(totalSpentAmount)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Total pengeluaran dari iklan yang berjalan</p>
+            <div className="text-2xl font-semibold text-emerald-600">
+              {formatRupiah(totalSpentAmount)}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1 font-medium">
+              Akumulasi anggaran iklan terpakai
+            </p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-100">
+        <Card className="shadow-none border-slate-100">
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Total Leads Didapat</CardTitle>
-            <TrendingUp className="h-4 w-4 text-amber-600" />
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Total Leads
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-amber-700">{totalLeadsCount.toLocaleString("id-ID")}</div>
-            <p className="text-xs text-muted-foreground mt-1">Total calon klien dari seluruh iklan</p>
+            <div className="text-2xl font-semibold text-amber-600">
+              {totalLeadsCount.toLocaleString("id-ID")}
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1 font-medium">
+              Total calon klien yang didapat
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Main Tabs (STIFIn Admin Style) ───────────────────────────────── */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="overview">Pengajuan Iklan</TabsTrigger>
-          <TabsTrigger value="master">Master Brief</TabsTrigger>
-          <TabsTrigger value="whatsapp">Pengaturan WA</TabsTrigger>
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="bg-slate-100/50 p-1 border">
+          <TabsTrigger value="overview" className="gap-2"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
+          <TabsTrigger value="master" className="gap-2"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="gap-2"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
         </TabsList>
 
-        {/* ── Tab 1: Overview ─────────────────────────────────────────────── */}
-        <TabsContent value="overview" className="space-y-4 mt-4">
-          {/* Filters (Like Admin) */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari berdasarkan kota..."
-                value={searchCity}
-                onChange={(e) => setSearchCity(e.target.value)}
-                className="pl-10"
-              />
+        <TabsContent value="overview" className="space-y-4">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+               <div>
+                  <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
+                  <p className="text-xs text-muted-foreground">Kelola pengajuan iklan Anda</p>
+               </div>
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Filter status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Semua Status</SelectItem>
-                <SelectItem value="MENUNGGU_PEMBAYARAN">Menunggu Pembayaran</SelectItem>
-                <SelectItem value="MENUNGGU_KONTEN">Menunggu Konten</SelectItem>
-                <SelectItem value="DIPROSES">Diproses</SelectItem>
-                <SelectItem value="KONTEN_SELESAI">Konten Selesai</SelectItem>
-                <SelectItem value="IKLAN_DIJADWALKAN">Iklan Dijadwalkan</SelectItem>
-                <SelectItem value="IKLAN_BERJALAN">Iklan Berjalan</SelectItem>
-                <SelectItem value="SELESAI">Selesai</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
 
-          <div className="grid grid-cols-1 gap-4">
-            {filteredAdRequests.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <BarChart3 className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">Belum ada data</h3>
-                  <p className="text-sm text-muted-foreground mt-1 italic">Tidak ada pengajuan iklan yang sesuai filter.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              filteredAdRequests.map((ad) => (
-                <Card key={ad.id} className="hover:border-slate-300 transition-all">
-                  <CardHeader className="pb-3 pt-4 px-4 md:px-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold border text-sm">{ad.city.charAt(0)}</div>
-                         <div>
-                            <CardTitle className="text-base font-bold text-slate-900">{ad.city}</CardTitle>
-                            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-tight">Promotor: {ad.promotor.name}</p>
-                         </div>
-                      </div>
-                      {getStatusBadge(ad.status)}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="px-4 md:px-6 pb-4">
-                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-3 text-sm border-y border-slate-50 mb-3">
-                        <div className="space-y-1">
-                          <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Tgl Mulai</p>
-                          <p className="font-semibold text-slate-800">{formatShortDate(ad.startDate)}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1"><DollarSign className="h-3 w-3" /> Budget</p>
-                          <p className="font-semibold text-slate-800">{formatRupiah(ad.totalPayment)}</p>
-                        </div>
-                        {ad.adReport && (
-                          <>
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase font-bold text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Leads</p>
-                              <p className="font-bold text-emerald-700">{ad.adReport.totalLeads}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[10px] uppercase font-bold text-rose-600 flex items-center gap-1"><BarChart3 className="h-3 w-3" /> Spent</p>
-                              <p className="font-bold text-rose-700">{formatRupiah(ad.adReport.amountSpent || 0)}</p>
-                            </div>
-                          </>
-                        )}
-                     </div>
-
-                     <div className="flex items-center justify-end gap-2">
-                        {ad.status === "KONTEN_SELESAI" && (
-                          <Button 
-                            variant="default"
-                            size="sm" 
-                            className="font-bold h-8 text-[11px] uppercase tracking-wider"
-                            onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); }}
-                          >
-                            <CalendarCheck className="h-4 w-4 mr-2" /> Susun Jadwal
-                          </Button>
-                        )}
-                        {ad.status === "IKLAN_BERJALAN" && (
-                          <Button 
-                            variant="secondary"
-                            size="sm" 
-                            className="font-bold h-8 text-[11px] border border-slate-200 uppercase tracking-wider"
-                            onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}
-                          >
-                            <Upload className="h-4 w-4 mr-2" /> Upload Laporan
-                          </Button>
-                        )}
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="text-xs font-bold w-40">
-                             <DropdownMenuItem asChild>
-                                <a href={`/api/ad-requests/${ad.id}/report/download`} target="_blank" className="flex items-center gap-2">
-                                  <Download className="h-4 w-4" /> Export Report PDF
-                                </a>
-                             </DropdownMenuItem>
-                             {ad.paymentProofUrl && (
-                               <DropdownMenuItem asChild>
-                                  <a href={ad.paymentProofUrl} target="_blank" className="flex items-center gap-2">
-                                    <ExternalLink className="h-4 w-4" /> Lihat Bukti Bayar
-                                  </a>
-                               </DropdownMenuItem>
-                             )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                     </div>
-                  </CardContent>
+            <div className="grid gap-4">
+              {filteredRequests.length === 0 ? (
+                <Card className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground italic border-dashed border-2">
+                  <p>Belum ada pengajuan iklan dalam kategori ini.</p>
                 </Card>
-              ))
-            )}
+              ) : (
+                filteredRequests.map((ad) => (
+                  <Card key={ad.id} className="shadow-none hover:border-slate-300 transition-all">
+                    <CardHeader className="p-4 md:p-6 pb-2">
+                      <div className="flex items-center justify-between">
+                         <div className="space-y-1">
+                            <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                               <DollarSign className="h-4 w-4 text-muted-foreground" />
+                               {ad.city}
+                            </CardTitle>
+                            <p className="text-[11px] text-muted-foreground font-medium">Dibuat {formatDate(ad.createdAt)} • Promotor: {ad.promotor.name}</p>
+                         </div>
+                         {getStatusBadge(ad.status)}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="px-4 md:px-6 pb-4">
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 text-sm border-t border-slate-50 mt-2">
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><Calendar className="h-3 w-3" /> Tanggal Mulai</p>
+                            <p className="font-semibold text-slate-800">{formatShortDate(ad.startDate)}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><Clock className="h-3 w-3" /> Durasi</p>
+                            <p className="font-semibold text-slate-800">{ad.durationDays} hari</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><DollarSign className="h-3 w-3" /> Budget/Hari</p>
+                            <p className="font-semibold text-slate-800">{formatRupiah(ad.dailyBudget)}</p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><DollarSign className="h-3 w-3" /> Total Bayar</p>
+                            <p className="font-semibold text-slate-800">{formatRupiah(ad.totalPayment)}</p>
+                          </div>
+                       </div>
+
+                       {ad.adReport && (
+                          <div className="grid grid-cols-2 gap-4 py-3 bg-slate-50/50 rounded-lg px-4 mb-4 border border-slate-100">
+                             <div className="flex items-center gap-4">
+                                <div className="text-emerald-600 bg-emerald-100 p-2 rounded-full"><TrendingUp className="h-4 w-4" /></div>
+                                <div>
+                                   <p className="text-[10px] uppercase font-semibold text-muted-foreground">Total Leads</p>
+                                   <p className="text-lg font-semibold text-emerald-700">{ad.adReport.totalLeads}</p>
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-4 border-l pl-4">
+                                <div className="text-rose-600 bg-rose-100 p-2 rounded-full"><BarChart3 className="h-4 w-4" /></div>
+                                <div>
+                                   <p className="text-[10px] uppercase font-semibold text-muted-foreground">Total Spent</p>
+                                   <p className="text-lg font-semibold text-rose-700">{formatRupiah(ad.adReport.amountSpent || 0)}</p>
+                                </div>
+                             </div>
+                          </div>
+                       )}
+
+                       <div className="flex items-center justify-between pt-2">
+                          <div className="flex gap-2">
+                             {ad.contentUrl && (
+                                <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2">
+                                   <a href={ad.contentUrl} target="_blank"><Download className="h-4 w-4" /> Download Konten</a>
+                                </Button>
+                             )}
+                             {ad.paymentProofUrl && (
+                                <Button size="sm" variant="ghost" asChild className="h-8 font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
+                                   <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
+                                </Button>
+                             )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                             {ad.status === "KONTEN_SELESAI" && (
+                                <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); }}>
+                                   <CalendarCheck className="h-4 w-4" /> Susun Jadwal
+                                </Button>
+                             )}
+                             {ad.status === "IKLAN_BERJALAN" && (
+                                <Button size="sm" variant="secondary" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
+                                   <Upload className="h-4 w-4" /> Upload Laporan
+                                </Button>
+                             )}
+                             
+                             <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="font-medium text-xs">
+                                   <DropdownMenuItem asChild>
+                                      <a href={`/api/ad-requests/${ad.id}/report/download`} target="_blank" className="flex items-center gap-2"><Download className="h-4 w-4" /> Export Report (PDF)</a>
+                                   </DropdownMenuItem>
+                                </DropdownMenuContent>
+                             </DropdownMenu>
+                          </div>
+                       </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
           </div>
         </TabsContent>
 
-        {/* ── Tab 2: Master Brief ────────────────────────────────────────── */}
-        <TabsContent value="master" className="space-y-4 mt-4">
+        <TabsContent value="master" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-               <h2 className="text-lg font-bold">Master Template Brief</h2>
-               <p className="text-xs text-muted-foreground">Kelola format narasi VO dan Jedag Jedug otomatis</p>
+               <h2 className="text-lg font-semibold">Master Template Brief</h2>
+               <p className="text-xs text-muted-foreground">Kelola format narasi video otomatis</p>
             </div>
-            <Button onClick={() => { setEditingTemplate(null); setTemplateName(""); setTemplateContent(""); setIsTemplateDialogOpen(true); }} size="sm" className="font-bold h-9">
-              <Plus className="h-4 w-4 mr-2" /> Tambah Template
+            <Button onClick={() => { setEditingTemplate(null); setTemplateName(""); setTemplateContent(""); setIsTemplateDialogOpen(true); }} size="sm" className="font-semibold h-9 gap-2">
+              <Plus className="h-4 w-4" /> Tambah Template
             </Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {briefTemplates.length === 0 ? (
-               <div className="col-span-full py-12 text-center text-muted-foreground border rounded-lg border-dashed">Belum ada template master yang tersimpan.</div>
-            ) : (
-              briefTemplates.map((t) => (
-                <Card key={t.id} className="group relative overflow-hidden bg-white hover:border-slate-300 transition-all border-slate-200">
-                  <div className={`h-1.5 w-full ${t.type === "VO" ? "bg-blue-500" : "bg-purple-500"}`} />
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className={`text-[9px] font-bold uppercase tracking-wider ${t.type === "VO" ? "border-blue-200 text-blue-700 bg-blue-50" : "border-purple-200 text-purple-700 bg-purple-50"}`}>
-                        {t.type === "VO" ? "Voice Over" : "Jedag Jedug"}
-                      </Badge>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingTemplate(t); setTemplateType(t.type as "VO" | "JJ"); setTemplateName(t.name); setTemplateContent(t.content); setIsTemplateDialogOpen(true); }}><Settings className="h-3.5 w-3.5 text-slate-400 group-hover:text-slate-600" /></Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500 hover:bg-rose-50" onClick={() => handleDeleteTemplate(t.id)}><AlertCircle className="h-3.5 w-3.5" /></Button>
-                      </div>
-                    </div>
-                    <CardTitle className="text-base font-bold mt-2 text-slate-800">{t.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <pre className="bg-slate-50 p-3 rounded text-[11px] font-mono text-slate-600 min-h-[100px] whitespace-pre-wrap leading-relaxed border">
+            {briefTemplates.map((t) => (
+              <Card key={t.id} className="relative group hover:border-slate-300 transition-all shadow-none">
+                <div className={`h-1 w-full absolute top-0 left-0 ${t.type === "VO" ? "bg-blue-500" : "bg-purple-500"}`} />
+                <CardHeader className="p-4 pb-2">
+                  <div className="flex items-center justify-between">
+                     <Badge variant="outline" className={`text-[10px] font-semibold ${t.type === "VO" ? "text-blue-600 border-blue-100 bg-blue-50/50" : "text-purple-600 border-purple-100 bg-purple-50/50"}`}>{t.type}</Badge>
+                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingTemplate(t); setTemplateType(t.type as "VO" | "JJ"); setTemplateName(t.name); setTemplateContent(t.content); setIsTemplateDialogOpen(true); }}><Settings className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500" onClick={() => handleDeleteTemplate(t.id)}><AlertCircle className="h-3.5 w-3.5" /></Button>
+                     </div>
+                  </div>
+                  <CardTitle className="text-base font-semibold mt-2">{t.name}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                   <div className="bg-slate-50 p-3 rounded text-xs font-mono text-slate-600 h-24 overflow-hidden border">
                       {t.content}
-                    </pre>
-                  </CardContent>
-                </Card>
-              ))
-            )}
+                   </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </TabsContent>
 
-        {/* ── Tab 3: WhatsApp Settings ───────────────────────────────────── */}
-        <TabsContent value="whatsapp" className="space-y-4 mt-4">
-          <div>
-            <h2 className="text-lg font-bold">Notifikasi WhatsApp</h2>
-            <p className="text-xs text-muted-foreground">Konfigurasi pesan otomatis ke Promotor & Advertiser</p>
+        <TabsContent value="whatsapp" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Pengaturan Notifikasi WhatsApp</h2>
+              <p className="text-xs text-muted-foreground">Aktifkan/Nonaktifkan notifikasi otomatis</p>
+            </div>
+            <Badge variant="outline" className="text-emerald-600 border-emerald-100 bg-emerald-50">Emerald Green Toggle</Badge>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              { slug: "payment-confirmed-promotor", name: "Pembayaran Valid (Promotor)", desc: "Pesan saat bukti bayar divalidasi", default: "Halo *{promotor}*, Pembayaran iklan Anda untuk kota *{city}* telah diterima. Terimakasih!" },
-              { slug: "payment-confirmed-advertiser", name: "Pembayaran Masuk (Advertiser)", desc: "Laporan untuk tim Advertiser", default: "*NOTIFIKASI*: Promotor *{promotor}* telah bayar untuk *{city}*." },
-              { slug: "content-finished-promotor", name: "Konten Selesai (Promotor)", desc: "Pesan saat video konten tersedia", default: "Halo *{promotor}*, Konten iklan *{city}* sudah selesai! Silakan cek dashboard." },
-              { slug: "ad-scheduled-promotor", name: "Iklan Dijadwalkan (Promotor)", desc: "Pesan saat tanggal tayang diputuskan", default: "Kabar gembira *{promotor}*! Iklan *{city}* telah dijadwalkan tayang." },
-              { slug: "client-report-stifin", name: "Laporan Klien (Admin STIFIn)", desc: "Laporan performa leads harian", default: "Admin: *{promotor}* melaporkan *{jumlah}* klien untuk iklan *{city}*." },
+              { slug: "payment-confirmed-promotor", name: "Pembayaran Valid (Promotor)", desc: "Bukti bayar divalidasi", default: "Halo *{promotor}*, Pembayaran iklan Anda untuk kota *{city}* telah diterima. Terimakasih!" },
+              { slug: "payment-confirmed-advertiser", name: "Pembayaran Masuk (Advertiser)", desc: "Laporan uang masuk", default: "*NOTIFIKASI*: Promotor *{promotor}* telah bayar untuk *{city}*." },
+              { slug: "content-finished-promotor", name: "Konten Selesai (Promotor)", desc: "Video siap diunduh", default: "Halo *{promotor}*, Konten iklan *{city}* sudah selesai! Silakan cek dashboard." },
+              { slug: "ad-scheduled-promotor", name: "Iklan Dijadwalkan (Promotor)", desc: "Tanggal tayang diputuskan", default: "Kabar gembira *{promotor}*! Iklan *{city}* telah dijadwalkan tayang." },
+              { slug: "client-report-stifin", name: "Laporan Klien (Admin STIFIn)", desc: "Laporan harian leads", default: "Admin: *{promotor}* melaporkan *{jumlah}* klien untuk iklan *{city}*." },
             ].map((tpl) => {
               const current = notifTemplates.find(t => t.slug === tpl.slug)
               const isActive = current ? current.isActive : true
               return (
-                <Card key={tpl.slug} className={`transition-all border-slate-200 ${!isActive ? "opacity-50 grayscale bg-slate-50" : "hover:border-slate-300"}`}>
+                <Card key={tpl.slug} className={`border-slate-200 ${!isActive ? "opacity-60 grayscale" : ""}`}>
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-bold uppercase tracking-tight text-slate-700">{tpl.name}</CardTitle>
-                      <Switch className="data-[state=checked]:bg-emerald-500 scale-90" checked={isActive} onCheckedChange={(c) => handleUpdateNotifTemplate(null, tpl.slug, c)} />
+                       <CardTitle className="text-sm font-semibold uppercase tracking-tight text-slate-700">{tpl.name}</CardTitle>
+                       <Switch className="data-[state=checked]:bg-emerald-500" checked={isActive} onCheckedChange={(c) => handleUpdateNotifTemplate(null, tpl.slug, c)} />
                     </div>
-                    <CardDescription className="text-xs font-medium text-slate-500">{tpl.desc}</CardDescription>
+                    <CardDescription className="text-xs font-medium">{tpl.desc}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-4 pt-2 space-y-3">
-                    <div className="bg-slate-50 rounded border border-slate-200 p-3 text-[11px] font-mono text-slate-700 min-h-[70px] leading-relaxed">
-                      {current?.message || tpl.default}
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full text-[10px] font-bold h-8 uppercase tracking-widest bg-white border-slate-200" onClick={() => {
-                      setEditingNotifTemplate(current || { slug: tpl.slug, name: tpl.name, message: tpl.default, isActive: true } as any)
-                    }}>
-                      <Settings className="h-3 w-3 mr-2" /> Konfigurasi Pesan
-                    </Button>
+                     <div className="bg-slate-50 rounded border p-3 text-[11px] font-mono text-slate-700 min-h-[60px]">
+                        {current?.message || tpl.default}
+                     </div>
+                     <Button variant="outline" size="sm" className="w-full text-xs font-semibold h-8 uppercase tracking-widest" onClick={() => {
+                        setEditingNotifTemplate(current || { slug: tpl.slug, name: tpl.name, message: tpl.default, isActive: true } as any)
+                     }}>
+                        <Settings className="h-3 w-3 mr-2" /> Edit Pesan
+                     </Button>
                   </CardContent>
                 </Card>
               )
@@ -586,27 +549,27 @@ export default function AdvertiserDashboard() {
         </TabsContent>
       </Tabs>
 
-      {/* ── Dialogs (Unified Design) ────────────────────────────────────── */}
+      {/* Unified Dialogs (Promotor Style) */}
       <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSchedule} className="space-y-4">
             <DialogHeader>
-              <DialogTitle className="font-bold text-lg">Penyusunan Jadwal</DialogTitle>
-              <DialogDescription>Tentukan periode penayangan iklan di platform.</DialogDescription>
+              <DialogTitle className="font-semibold">Penyusunan Jadwal</DialogTitle>
+              <DialogDescription className="text-xs">Tentukan rentang tanggal tayang iklan.</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-2 text-sm">
-               <div className="space-y-2">
-                 <Label className="font-bold text-xs uppercase text-slate-600">Mulai Tayang</Label>
-                 <Input type="date" value={adStartDate} onChange={(e) => setAdStartDate(e.target.value)} required className="text-xs font-semibold" />
+            <div className="grid grid-cols-2 gap-4 py-2">
+               <div className="space-y-1">
+                 <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Mulai</Label>
+                 <Input type="date" value={adStartDate} onChange={(e) => setAdStartDate(e.target.value)} required />
                </div>
-               <div className="space-y-2">
-                 <Label className="font-bold text-xs uppercase text-slate-600">Selesai Tayang</Label>
-                 <Input type="date" value={adEndDate} onChange={(e) => setAdEndDate(e.target.value)} required className="text-xs font-semibold" />
+               <div className="space-y-1">
+                 <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Selesai</Label>
+                 <Input type="date" value={adEndDate} onChange={(e) => setAdEndDate(e.target.value)} required />
                </div>
             </div>
-            <DialogFooter className="gap-2">
-              <Button type="button" variant="ghost" className="font-bold text-xs" onClick={() => setScheduleDialogOpen(false)}>Batal</Button>
-              <Button type="submit" disabled={isSubmitting} className="font-bold text-xs px-6 bg-slate-900">{isSubmitting ? "Memproses..." : "Konfirmasi"}</Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setScheduleDialogOpen(false)}>Batal</Button>
+              <Button type="submit" size="sm" disabled={isSubmitting}>{isSubmitting ? "Memproses..." : "Konfirmasi"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -616,28 +579,22 @@ export default function AdvertiserDashboard() {
         <DialogContent>
           <form onSubmit={handleUploadReport} className="space-y-4">
             <DialogHeader>
-              <DialogTitle className="font-bold text-lg">Laporan Hasil Iklan</DialogTitle>
-              <DialogDescription>Input total biaya terpakai dan leads yang didapat.</DialogDescription>
+              <DialogTitle className="font-semibold">Upload Laporan Hasil</DialogTitle>
+              <DialogDescription className="text-xs">Masukkan budget terpakai dan leads yang masuk.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
-               <div className="space-y-2">
-                 <Label className="font-bold text-sm">Biaya Terpakai (Ads Spent)</Label>
-                 <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-bold text-xs">Rp</span>
-                    <Input type="number" value={inputAmountSpent} onChange={(e) => setInputAmountSpent(e.target.value)} placeholder="0" required className="pl-9 font-bold" />
-                 </div>
+               <div className="space-y-1">
+                 <Label className="font-semibold text-sm">Biaya Iklan (Ads Spent)</Label>
+                 <Input type="number" value={inputAmountSpent} onChange={(e) => setInputAmountSpent(e.target.value)} placeholder="0" required />
                </div>
-               <div className="space-y-2">
-                 <Label className="font-bold text-sm">Total Leads Didapat</Label>
-                 <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input type="number" value={inputTotalLeads} onChange={(e) => setInputTotalLeads(e.target.value)} placeholder="0" required className="pl-10 font-bold" />
-                 </div>
+               <div className="space-y-1">
+                 <Label className="font-semibold text-sm">Total Leads/Gasing</Label>
+                 <Input type="number" value={inputTotalLeads} onChange={(e) => setInputTotalLeads(e.target.value)} placeholder="0" required />
                </div>
             </div>
-            <DialogFooter className="gap-2">
-              <Button type="button" variant="ghost" className="font-bold text-xs" onClick={() => setReportDialogOpen(false)}>Batal</Button>
-              <Button type="submit" disabled={isSubmitting} className="font-bold text-xs px-6 bg-emerald-600 hover:bg-emerald-700 text-white">{isSubmitting ? "Menyimpan..." : "Simpan Laporan"}</Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setReportDialogOpen(false)}>Batal</Button>
+              <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" disabled={isSubmitting}>{isSubmitting ? "Menyimpan..." : "Simpan Laporan"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -646,32 +603,29 @@ export default function AdvertiserDashboard() {
       <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleSaveTemplate} className="space-y-4">
-            <DialogHeader><DialogTitle className="font-bold text-lg text-slate-800">{editingTemplate ? "Edit Template Master" : "Buat Template Baru"}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="font-bold text-lg">{editingTemplate ? "Edit Template Master" : "Buat Template Baru"}</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label className="font-bold text-xs uppercase text-slate-500">Kategori Brief</Label>
-                <Tabs value={templateType} onValueChange={(v) => setTemplateType(v as "VO" | "JJ")}>
-                  <TabsList className="grid grid-cols-2 h-9"><TabsTrigger value="VO" className="text-xs">Voice Over (Script)</TabsTrigger><TabsTrigger value="JJ" className="text-xs">Jedag Jedug (Vibe)</TabsTrigger></TabsList>
-                </Tabs>
+                 <Label className="text-[11px] font-bold uppercase text-muted-foreground">Kategori</Label>
+                 <Tabs value={templateType} onValueChange={(v) => setTemplateType(v as "VO" | "JJ")}>
+                  <TabsList className="grid grid-cols-2"><TabsTrigger value="VO">Voice Over</TabsTrigger><TabsTrigger value="JJ">Jedag Jedug</TabsTrigger></TabsList>
+                 </Tabs>
               </div>
               <div className="space-y-2">
-                <Label className="font-bold text-xs uppercase text-slate-500">Nama Template</Label>
-                <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="Contoh: Template VO Soft Selling" required className="font-semibold text-sm h-10" />
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Nama Template</Label>
+                <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} required />
               </div>
               <div className="space-y-2">
-                <Label className="font-bold text-xs uppercase text-slate-500">Narasi Script</Label>
-                <Textarea value={templateContent} onChange={(e) => setTemplateContent(e.target.value)} placeholder="Gunakan variabel {city}, {day}, {date} di sini..." className="min-h-[150px] font-mono text-sm leading-relaxed p-4 bg-slate-50 border-slate-200" required />
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Narasi Script</Label>
+                <Textarea value={templateContent} onChange={(e) => setTemplateContent(e.target.value)} className="min-h-[150px] font-mono text-sm leading-relaxed bg-slate-50 border-slate-200" required />
               </div>
               <div className="text-[10px] text-muted-foreground bg-slate-100 p-3 rounded-lg border border-slate-200 font-medium">
-                <span className="font-bold text-slate-700">Variabel Tersedia:</span><br/>
-                <span className="font-mono text-emerald-600 font-bold">{"{city}"}</span> (Nama Kota), 
-                <span className="font-mono text-emerald-600 font-bold ml-2">{"{day}"}</span> (Nama Hari), 
-                <span className="font-mono text-emerald-600 font-bold ml-2">{"{date}"}</span> (Tanggal Lengkap)
+                <span className="font-bold text-slate-700">Variabel:</span> {"{city}"} (Kota), {"{day}"} (Hari), {"{date}"} (Tanggal)
               </div>
             </div>
-            <DialogFooter className="gap-2">
-              <Button type="button" variant="ghost" className="font-bold text-xs" onClick={() => setIsTemplateDialogOpen(false)}>Batal</Button>
-              <Button type="submit" disabled={isSubmitting} className="font-bold text-xs px-8 h-10">{isSubmitting ? "Menyimpan..." : "Simpan"}</Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setIsTemplateDialogOpen(false)}>Batal</Button>
+              <Button type="submit" size="sm" className="font-bold px-8" disabled={isSubmitting}>{isSubmitting ? "Menyimpan..." : "Simpan"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -679,23 +633,20 @@ export default function AdvertiserDashboard() {
 
       <Dialog open={!!editingNotifTemplate} onOpenChange={(v) => !v && setEditingNotifTemplate(null)}>
         <DialogContent className="sm:max-w-md">
-          <form onSubmit={(e) => handleUpdateNotifTemplate(e, editingNotifTemplate?.slug || "", editingNotifTemplate?.isActive, editingNotifTemplate?.message)} className="space-y-4 text-sm font-semibold">
+          <form onSubmit={(e) => handleUpdateNotifTemplate(e, editingNotifTemplate?.slug || "", editingNotifTemplate?.isActive, editingNotifTemplate?.message)} className="space-y-4">
             <DialogHeader>
-              <DialogTitle className="font-bold text-lg">Konfigurasi Pesan WhatsApp</DialogTitle>
-              <DialogDescription className="text-xs">Edit kalimat pesan yang akan terkirim secara otomatis.</DialogDescription>
+              <DialogTitle className="font-bold">Edit Pesan WhatsApp</DialogTitle>
+              <DialogDescription className="text-xs">Ubah isi pesan otomatis yang dikirim sistem.</DialogDescription>
             </DialogHeader>
             <div className="py-2 space-y-4">
                <Textarea value={editingNotifTemplate?.message || ""} onChange={(e) => setEditingNotifTemplate(prev => prev ? { ...prev, message: e.target.value } : null)} className="min-h-[140px] font-mono text-[13px] bg-slate-50 border-slate-200 p-4 leading-relaxed" />
-               <div className="text-[10px] text-muted-foreground bg-amber-50 border border-amber-200 p-3 rounded-lg">
-                 <span className="font-bold text-amber-800">Variabel Data:</span><br/>
-                 <span className="font-mono text-blue-600 font-bold">{"{promotor}"}</span> (Nama Promotor), 
-                 <span className="font-mono text-blue-600 font-bold ml-2">{"{city}"}</span> (Nama Kota), 
-                 <span className="font-mono text-blue-600 font-bold ml-2">{"{jumlah}"}</span> (Total Leads)
+               <div className="text-[10px] text-muted-foreground bg-amber-50 border border-amber-200 p-3 rounded-lg font-medium">
+                 <span className="font-bold text-amber-800">Variabel WA:</span> {"{promotor}"}, {"{city}"}, {"{jumlah}"}
                </div>
             </div>
-            <DialogFooter className="gap-2 pt-2">
-              <Button type="button" variant="ghost" className="font-bold text-xs" onClick={() => setEditingNotifTemplate(null)}>Batal</Button>
-              <Button type="submit" disabled={isSubmitting} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-8 h-10">Update Pesan</Button>
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setEditingNotifTemplate(null)}>Batal</Button>
+              <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8" disabled={isSubmitting}>Update Pesan</Button>
             </DialogFooter>
           </form>
         </DialogContent>
