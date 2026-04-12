@@ -27,8 +27,12 @@ export async function POST(req: Request) {
     await writeFile(filePath, buffer);
 
     return NextResponse.json({ url: `/uploads/${uniqueFileName}` });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload error:", error);
+    // Return specific error for payload too large
+    if (error.message?.includes("large") || error.code === "PAYLOAD_TOO_LARGE") {
+      return NextResponse.json({ error: "File terlalu besar (maksimal 100MB)" }, { status: 413 });
+    }
     return NextResponse.json({ error: "Gagal menyimpan file" }, { status: 500 });
   }
 }
