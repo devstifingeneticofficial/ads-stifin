@@ -603,7 +603,10 @@ export default function AdvertiserDashboard() {
       <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleSaveTemplate} className="space-y-4">
-            <DialogHeader><DialogTitle className="font-bold text-lg">{editingTemplate ? "Edit Template Master" : "Buat Template Baru"}</DialogTitle></DialogHeader>
+            <DialogHeader>
+              <DialogTitle className="font-semibold text-lg">{editingTemplate ? "Edit Template Master" : "Buat Template Baru"}</DialogTitle>
+              <DialogDescription className="text-xs">Kelola konten narasi untuk script video iklan.</DialogDescription>
+            </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
                  <Label className="text-[11px] font-bold uppercase text-muted-foreground">Kategori</Label>

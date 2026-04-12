@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import {
   Sheet,
   SheetContent,
@@ -77,6 +78,7 @@ interface AdRequest {
 
 interface Notification {
   id: string
+  title: string
   message: string
   read: boolean
   createdAt: string
@@ -188,6 +190,7 @@ export default function KontenKreatorDashboard() {
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("MENUNGGU_KONTEN")
 
   // Action states
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -448,6 +451,149 @@ export default function KontenKreatorDashboard() {
     return null
   }
 
+  const renderAdCards = (tabStatus: string) => {
+    const filtered = adRequests.filter((ad) => {
+      if (tabStatus === "MENUNGGU_KONTEN") return ad.status === "MENUNGGU_KONTEN"
+      if (tabStatus === "DIPROSES") return ad.status === "DIPROSES"
+      if (tabStatus === "SELESAI") return ["KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"].includes(ad.status)
+      return true
+    })
+
+    if (filtered.length === 0) {
+      return (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+            <Megaphone className="h-10 w-10 mb-3 opacity-20" />
+            <p className="text-sm italic">Belum ada pengajuan untuk kategori ini.</p>
+          </CardContent>
+        </Card>
+      )
+    }
+
+    return (
+      <div className="space-y-4">
+        {filtered.map((ad) => (
+          <Card key={ad.id} className="overflow-hidden border-slate-200">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                <div className="space-y-1">
+                  <CardTitle className="text-base flex items-center gap-2 font-semibold">
+                    <Megaphone className="h-4 w-4 text-muted-foreground" />
+                    {ad.promotor?.name} - Iklan {ad.city}
+                  </CardTitle>
+                  <CardDescription className="text-[10px] uppercase font-medium tracking-wider">
+                    Dibuat {formatDate(ad.createdAt)}
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {ad.briefType && getBriefTypeBadge(ad.briefType)}
+                  {getStatusBadge(ad.status)}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Brief Content Preview */}
+              {ad.briefContent && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Brief Konten
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs font-medium"
+                      onClick={() => {
+                        setSelectedBrief(ad)
+                        setBriefSheetOpen(true)
+                      }}
+                    >
+                      <Eye className="h-3.5 w-3.5 mr-1" />
+                      Detail
+                    </Button>
+                  </div>
+                  <div className="space-y-3">
+                    {ad.briefContent.split("\n\n------------------------------------------------------------\n\n").map((part, idx) => {
+                      const isJJ = part.includes("JEDAG-JEDUG");
+                      const isVO = part.includes("VOICE OVER");
+                      const title = isJJ ? "BRIEF JJ" : isVO ? "BRIEF VO" : "BRIEF KONTEN";
+                      const cleanPart = part
+                        .replace(/^\[ BRIEF JEDAG-JEDUG \(JJ\) \]\n*/, '')
+                        .replace(/^\[ BRIEF VOICE OVER \(VO\) \]\n*/, '');
+                      
+                      return (
+                        <div key={idx} className="relative group">
+                          <p className="text-[10px] font-bold text-muted-foreground mb-1 uppercase tracking-tight">{title}</p>
+                          <div className="absolute top-6 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] font-bold"
+                              onClick={() => handleCopyBrief(cleanPart)}
+                            >
+                              <Copy className="h-3 w-3 mr-1" />
+                              Salin
+                            </Button>
+                          </div>
+                          <pre className="rounded-lg bg-slate-50/50 border p-4 text-[11px] leading-relaxed whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
+                            {cleanPart}
+                          </pre>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Content URL if already uploaded */}
+              {ad.contentUrl && (
+                <div className="text-sm flex items-center gap-2 bg-slate-50 p-2 rounded border border-slate-100">
+                  <span className="text-muted-foreground font-medium">Link Konten: </span>
+                  <a
+                    href={ad.contentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1 font-semibold"
+                  >
+                    <Eye className="h-3 w-3" />
+                    Lihat Konten Aktif
+                  </a>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-50">
+                {ad.status === "MENUNGGU_KONTEN" && (
+                  <Button
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                    size="sm"
+                    disabled={processingId === ad.id}
+                    onClick={() => handleProcessContent(ad.id)}
+                  >
+                    {processingId === ad.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+                    MULAI PROSES
+                  </Button>
+                )}
+                {ad.status === "DIPROSES" && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="font-semibold text-xs"
+                    onClick={() => setUploadDialogId(ad.id)}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    UPLOAD HASIL KONTEN
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -458,7 +604,7 @@ export default function KontenKreatorDashboard() {
           <h1 className="text-2xl font-bold tracking-tight">
             Dashboard Konten Kreator
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground font-medium">
             Kelola pembuatan konten iklan untuk semua pengajuan
           </p>
         </div>
@@ -520,255 +666,54 @@ export default function KontenKreatorDashboard() {
         </Card>
       </div>
 
-      {/* ── Ad Request Cards ──────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
-          <p className="text-sm text-muted-foreground">
-            Semua pengajuan iklan yang memerlukan konten
-          </p>
-        </div>
+      {/* ── Tabs Navigation ──────────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="bg-slate-100/50 p-1 border">
+          <TabsTrigger value="MENUNGGU_KONTEN" className="gap-2 relative">
+            Menunggu
+            {menungguKontenCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] text-white font-bold">
+                {menungguKontenCount}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="DIPROSES" className="gap-2 relative">
+            Diproses
+            {diprosesCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white font-bold">
+                {diprosesCount}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="SELESAI" className="gap-2">
+            Selesai
+          </TabsTrigger>
+        </TabsList>
 
-        {adRequests.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-              <Megaphone className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium">Belum ada pengajuan</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pengajuan iklan baru akan muncul di sini
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {adRequests.map((ad) => (
-              <Card key={ad.id}>
-                <CardHeader>
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                    <div className="space-y-1">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Megaphone className="h-4 w-4 text-muted-foreground" />
-                        {ad.promotor?.name} - Iklan {ad.city}
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        Dibuat {formatDate(ad.createdAt)}
-                      </CardDescription>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {ad.briefType && getBriefTypeBadge(ad.briefType)}
-                      {getStatusBadge(ad.status)}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-
-                  {/* Brief Content Preview */}
-                  {ad.briefContent && (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          Brief Konten
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => {
-                              setSelectedBrief(ad)
-                              setBriefSheetOpen(true)
-                            }}
-                          >
-                            <Eye className="h-3 w-3 mr-1" />
-                            Lihat Detail
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        {ad.briefContent.split("\n\n------------------------------------------------------------\n\n").map((part, idx) => {
-                          const isJJ = part.includes("JEDAG-JEDUG");
-                          const isVO = part.includes("VOICE OVER");
-                          const title = isJJ ? "BRIEF JJ" : isVO ? "BRIEF VO" : "BRIEF KONTEN";
-
-                          const cleanPart = part
-                            .replace(/^\[ BRIEF JEDAG-JEDUG \(JJ\) \]\n*/, '')
-                            .replace(/^\[ BRIEF VOICE OVER \(VO\) \]\n*/, '');
-
-                          return (
-                            <div key={idx} className="relative group">
-                              <p className="text-xs font-semibold text-muted-foreground mb-1">{title}</p>
-                              <div className="absolute top-6 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="h-6 px-2 text-[10px]"
-                                  onClick={() => handleCopyBrief(cleanPart)}
-                                >
-                                  <Copy className="h-3 w-3 mr-1" />
-                                  Salin
-                                </Button>
-                              </div>
-                              <pre className="rounded-lg bg-muted/50 border p-4 text-xs leading-relaxed whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
-                                {cleanPart}
-                              </pre>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-
-
-                  {/* Content URL if already uploaded */}
-                  {ad.contentUrl && (
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">Konten: </span>
-                      <a
-                        href={ad.contentUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        <Eye className="h-3 w-3" />
-                        Lihat Konten
-                      </a>
-                    </div>
-                  )}
-
-                  {/* Action Buttons based on status */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* MENUNGGU_KONTEN → PROSES button */}
-                    {ad.status === "MENUNGGU_KONTEN" && (
-                      <Button
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                        size="sm"
-                        disabled={processingId === ad.id}
-                        onClick={() => handleProcessContent(ad.id)}
-                      >
-                        {processingId === ad.id ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4 mr-2" />
-                        )}
-                        PROSES
-                      </Button>
-                    )}
-
-                    {/* DIPROSES → Upload Konten button */}
-                    {ad.status === "DIPROSES" && (
-                      <Dialog
-                        open={uploadDialogId === ad.id}
-                        onOpenChange={(open) => {
-                          if (open) {
-                            setUploadDialogId(ad.id)
-                          } else {
-                            setUploadDialogId(null)
-                            setUploadFile(null)
-                          }
-                        }}
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setUploadDialogId(ad.id)}
-                        >
-                          <Upload className="h-4 w-4 mr-2" />
-                          Upload Konten
-                        </Button>
-                        <DialogContent className="sm:max-w-md">
-                          <DialogHeader>
-                            <DialogTitle>Upload Konten Iklan</DialogTitle>
-                            <DialogDescription>
-                              Upload file konten iklan untuk pengajuan di{" "}
-                              <strong>{ad.city}</strong> oleh{" "}
-                              <strong>{ad.promotor?.name}</strong>
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4 py-2">
-                            {/* Brief info */}
-                            {ad.briefType && (
-                              <div className="flex items-center gap-2 text-sm">
-                                <span className="text-muted-foreground">
-                                  Tipe Brief:
-                                </span>
-                                {getBriefTypeBadge(ad.briefType)}
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              <Label htmlFor={`content-${ad.id}`}>
-                                File Konten
-                              </Label>
-                              <Input
-                                id={`content-${ad.id}`}
-                                ref={fileInputRef}
-                                type="file"
-                                accept="video/*,image/*,.mp4,.mov,.avi,.mkv,.jpg,.jpeg,.png"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0]
-                                  if (file) setUploadFile(file)
-                                }}
-                              />
-                              {uploadFile && (
-                                <p className="text-xs text-muted-foreground">
-                                  Dipilih: {uploadFile.name} (
-                                  {(uploadFile.size / 1024 / 1024).toFixed(2)} MB)
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setUploadDialogId(null)
-                                setUploadFile(null)
-                              }}
-                              disabled={uploading}
-                            >
-                              Batal
-                            </Button>
-                            <Button
-                              onClick={handleUploadContent}
-                              disabled={uploading || !uploadFile}
-                              className="bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              {uploading ? (
-                                <>
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                  Mengupload...
-                                </>
-                              ) : (
-                                <>
-                                  <Upload className="h-4 w-4 mr-2" />
-                                  Upload
-                                </>
-                              )}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    )}
-
-                    {/* Other statuses → info text */}
-                    {!["MENUNGGU_KONTEN", "DIPROSES"].includes(ad.status) && (
-                      <p className="text-sm text-muted-foreground italic">
-                        {ad.status === "MENUNGGU_PEMBAYARAN" &&
-                          "Menunggu promotor melakukan pembayaran."}
-                        {(ad.status === "KONTEN_SELESAI" ||
-                          ad.status === "IKLAN_BERJALAN" ||
-                          ad.status === "SELESAI") &&
-                          "Konten untuk pengajuan ini sudah selesai diproses."}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        <TabsContent value="MENUNGGU_KONTEN" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Menunggu Konten</h2>
+            <p className="text-sm text-muted-foreground italic">Daftar antrean iklan yang perlu segera diproses.</p>
           </div>
-        )}
-      </div>
+          {renderAdCards("MENUNGGU_KONTEN")}
+        </TabsContent>
+
+        <TabsContent value="DIPROSES" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Sedang Diproses</h2>
+            <p className="text-sm text-muted-foreground italic">Daftar iklan yang sedang dalam pengerjaan.</p>
+          </div>
+          {renderAdCards("DIPROSES")}
+        </TabsContent>
+
+        <TabsContent value="SELESAI" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Konten Selesai</h2>
+            <p className="text-sm text-muted-foreground italic">Riwayat konten yang sudah dikirim ke Advertiser.</p>
+          </div>
+          {renderAdCards("SELESAI")}
+        </TabsContent>
+      </Tabs>
 
       {/* ── Brief Detail Sheet ────────────────────────────────────────────── */}
       <Sheet open={briefSheetOpen} onOpenChange={setBriefSheetOpen}>
@@ -780,8 +725,8 @@ export default function KontenKreatorDashboard() {
             </SheetTitle>
             <SheetDescription>
               {selectedBrief && (
-                <span>
-                  {selectedBrief.city} &middot; {selectedBrief.promotor?.name}
+                <span className="font-medium text-xs">
+                  {selectedBrief?.city} &middot; {selectedBrief?.promotor?.name}
                 </span>
               )}
             </SheetDescription>
@@ -791,9 +736,9 @@ export default function KontenKreatorDashboard() {
             {selectedBrief && (
               <>
                 <div className="flex items-center gap-2 flex-wrap">
-                  {selectedBrief.briefType &&
+                  {selectedBrief?.briefType &&
                     getBriefTypeBadge(selectedBrief.briefType)}
-                  {getStatusBadge(selectedBrief.status)}
+                  {getStatusBadge(selectedBrief?.status || "")}
                 </div>
 
                 <Separator />
@@ -806,7 +751,7 @@ export default function KontenKreatorDashboard() {
                     <p className="text-sm font-medium px-4 shrink-0">Isi Brief</p>
                     <div className="flex-1 overflow-y-auto px-4 pb-20 touch-pan-y">
                       <div className="space-y-6">
-                        {selectedBrief.briefContent.split("\n\n------------------------------------------------------------\n\n").map((part, idx) => {
+                        {selectedBrief?.briefContent?.split("\n\n------------------------------------------------------------\n\n").map((part, idx) => {
                           const isJJ = part.includes("JEDAG-JEDUG");
                           const isVO = part.includes("VOICE OVER");
                           const title = isJJ ? "BRIEF JJ" : isVO ? "BRIEF VO" : "BRIEF KONTEN";
@@ -822,14 +767,14 @@ export default function KontenKreatorDashboard() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-7 text-xs bg-muted/50 hover:bg-muted"
+                                  className="h-7 text-xs bg-muted/50 hover:bg-muted font-bold"
                                   onClick={() => handleCopyBrief(cleanPart)}
                                 >
                                   <Copy className="h-3 w-3 mr-1" />
                                   Salin
                                 </Button>
                               </div>
-                              <pre className="rounded-lg bg-muted/50 border p-4 text-[13px] leading-relaxed whitespace-pre-wrap font-mono select-text">
+                              <pre className="rounded-lg bg-muted/50 border p-4 text-[13px] leading-relaxed whitespace-pre-wrap font-mono select-text border-slate-200">
                                 {cleanPart}
                               </pre>
                             </div>
