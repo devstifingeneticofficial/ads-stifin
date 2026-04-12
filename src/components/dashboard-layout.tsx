@@ -188,7 +188,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               {showNotif && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowNotif(false)} />
-                  <Card className="absolute right-0 top-12 z-50 w-80 shadow-xl border-slate-200">
+                  <Card className="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 z-50 sm:w-80 shadow-xl border-slate-200">
                     <CardContent className="p-0">
                       <div className="p-3 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="font-semibold text-sm text-slate-900">Notifikasi</h3>

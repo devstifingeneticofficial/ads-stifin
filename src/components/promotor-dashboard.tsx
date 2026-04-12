@@ -37,6 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -198,6 +199,16 @@ export default function PromotorDashboard() {
   const [resultClients, setResultClients] = useState("")
   const [resultNote, setResultNote] = useState("")
   const [submittingResult, setSubmittingResult] = useState(false)
+
+  // Edit states
+  const [editingAd, setEditingAd] = useState<AdRequest | null>(null)
+  const [editFormCity, setEditFormCity] = useState("")
+  const [editFormStartDate, setEditFormStartDate] = useState("")
+  const [editFormDuration, setEditFormDuration] = useState("")
+  const [editFormDailyBudget, setEditFormDailyBudget] = useState("")
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -394,6 +405,78 @@ export default function PromotorDashboard() {
     }
   }
 
+  // ── Edit & Delete ad request ──────────────────────────────────────────────
+
+  const handleOpenEdit = (ad: AdRequest) => {
+    setEditingAd(ad)
+    setEditFormCity(ad.city)
+    setEditFormStartDate(new Date(ad.startDate).toISOString().split("T")[0])
+    setEditFormDuration(ad.durationDays.toString())
+    setEditFormDailyBudget(ad.dailyBudget.toString())
+    setEditDialogOpen(true)
+  }
+
+  const handleUpdate = async () => {
+    if (!editingAd) return
+    if (!editFormCity || !editFormStartDate || !editFormDuration || !editFormDailyBudget) {
+      toast.error("Semua field wajib diisi")
+      return
+    }
+
+    const duration = parseInt(editFormDuration, 10)
+    const dailyBudget = parseInt(editFormDailyBudget, 10)
+
+    setIsUpdating(true)
+    try {
+      const res = await fetch(`/api/ad-requests/${editingAd.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: editFormCity,
+          startDate: editFormStartDate,
+          durationDays: duration,
+          dailyBudget,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal mengupdate pengajuan")
+      }
+
+      toast.success("Pengajuan berhasil diperbarui!")
+      setEditDialogOpen(false)
+      fetchAdRequests()
+    } catch (err: any) {
+      toast.error(err.message || "Gagal mengupdate pengajuan")
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus pengajuan ini?")) return
+
+    setIsDeleting(id)
+    try {
+      const res = await fetch(`/api/ad-requests/${id}`, {
+        method: "DELETE",
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal menghapus pengajuan")
+      }
+
+      toast.success("Pengajuan berhasil dihapus!")
+      fetchAdRequests()
+    } catch (err: any) {
+      toast.error(err.message || "Gagal menghapus pengajuan")
+    } finally {
+      setIsDeleting(null)
+    }
+  }
+
   // ── Calculated form summary ───────────────────────────────────────────────
 
   const calcDuration = parseInt(formDuration, 10) || 0
@@ -516,9 +599,9 @@ export default function PromotorDashboard() {
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>Buat Pengajuan Iklan</DialogTitle>
-                  <CardDescription>
+                  <DialogDescription>
                     Isi detail pengajuan iklan baru Anda
-                  </CardDescription>
+                  </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4 py-2">
@@ -731,10 +814,10 @@ export default function PromotorDashboard() {
                             <DialogContent className="sm:max-w-md">
                               <DialogHeader>
                                 <DialogTitle>Upload Bukti Transfer</DialogTitle>
-                                <CardDescription>
+                                <DialogDescription>
                                   Upload bukti pembayaran untuk pengajuan iklan di{" "}
                                   <strong>{ad.city}</strong>
-                                </CardDescription>
+                                </DialogDescription>
                               </DialogHeader>
                               <div className="space-y-4 py-2">
                                 <div className="rounded-lg bg-muted/50 p-4 space-y-1">
@@ -786,6 +869,23 @@ export default function PromotorDashboard() {
                               </DialogFooter>
                             </DialogContent>
                           </Dialog>
+
+                          <Button 
+                            variant="secondary" 
+                            size="sm"
+                            onClick={() => handleOpenEdit(ad)}
+                          >
+                            Edit
+                          </Button>
+
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={() => handleDelete(ad.id)}
+                            disabled={isDeleting === ad.id}
+                          >
+                            {isDeleting === ad.id ? "Menghapus..." : "Hapus"}
+                          </Button>
                         </>
                       )}
 
@@ -831,11 +931,11 @@ export default function PromotorDashboard() {
                           <DialogContent className="sm:max-w-md">
                             <DialogHeader>
                               <DialogTitle>{ad.promotorResult?.status === "VALID" ? "Ajukan Revisi Laporan" : "Input Laporan Klien"}</DialogTitle>
-                              <CardDescription>
+                              <DialogDescription>
                                 {ad.promotorResult?.status === "VALID" 
                                   ? "Anda sedang mengajukan revisi untuk laporan yang sudah divalidasi."
                                   : `Laporkan jumlah klien yang didapat dari iklan di ${ad.city}`}
-                              </CardDescription>
+                              </DialogDescription>
                             </DialogHeader>
                             {ad.promotorResult?.status === "VALID" && (
                               <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-800 flex items-start gap-2 mb-2">
@@ -1219,6 +1319,86 @@ export default function PromotorDashboard() {
           </div>
         </TabsContent>
       </Tabs>
+      {/* ── Edit Dialog ── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Pengajuan Iklan</DialogTitle>
+            <DialogDescription>
+              Ubah detail pengajuan iklan Anda
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-city">Nama Kota</Label>
+              <Input
+                id="edit-city"
+                value={editFormCity}
+                onChange={(e) => setEditFormCity(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-startDate">Tanggal Mulai</Label>
+              <Input
+                id="edit-startDate"
+                type="date"
+                value={editFormStartDate}
+                onChange={(e) => setEditFormStartDate(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-duration">Durasi Iklan (hari)</Label>
+              <Input
+                id="edit-duration"
+                type="number"
+                min={1}
+                value={editFormDuration}
+                onChange={(e) => setEditFormDuration(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-budget">Budget Per Hari (Rupiah)</Label>
+              <Input
+                id="edit-budget"
+                type="number"
+                min={1}
+                value={editFormDailyBudget}
+                onChange={(e) => setEditFormDailyBudget(e.target.value)}
+              />
+            </div>
+
+            <Separator />
+            <div className="rounded-lg bg-muted/50 p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Total Pembayaran Baru</span>
+                <span className="font-semibold">
+                  {formatRupiah(
+                    (parseInt(editFormDuration) || 0) * (parseInt(editFormDailyBudget) || 0) * 1.11
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+              disabled={isUpdating}
+            >
+              Batal
+            </Button>
+            <Button onClick={handleUpdate} disabled={isUpdating}>
+              {isUpdating ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

@@ -366,9 +366,32 @@ export default function KontenKreatorDashboard() {
 
   const handleCopyBrief = async (content: string) => {
     try {
-      await navigator.clipboard.writeText(content)
-      toast.success("Brief berhasil disalin!")
-    } catch {
+      // Try modern API first
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(content)
+        toast.success("Brief berhasil disalin!")
+        return
+      }
+
+      // Fallback for non-HTTPS (IP access)
+      const textArea = document.createElement("textarea")
+      textArea.value = content
+      textArea.style.position = "fixed"
+      textArea.style.left = "-9999px"
+      textArea.style.top = "0"
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      
+      const successful = document.execCommand("copy")
+      document.body.removeChild(textArea)
+      
+      if (successful) {
+        toast.success("Brief berhasil disalin!")
+      } else {
+        throw new Error("Gagal menyalin")
+      }
+    } catch (err) {
       toast.error("Gagal menyalin brief")
     }
   }
@@ -749,7 +772,7 @@ export default function KontenKreatorDashboard() {
 
       {/* ── Brief Detail Sheet ────────────────────────────────────────────── */}
       <Sheet open={briefSheetOpen} onOpenChange={setBriefSheetOpen}>
-        <SheetContent side="right" className="sm:max-w-lg w-full">
+        <SheetContent side="right" className="sm:max-w-lg w-full flex flex-col p-0 h-full">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -763,7 +786,7 @@ export default function KontenKreatorDashboard() {
               )}
             </SheetDescription>
           </SheetHeader>
-          <div className="flex-1 overflow-hidden flex flex-col p-4 pt-0 gap-4">
+          <div className="flex-1 overflow-hidden flex flex-col py-4 gap-4">
             {/* Brief meta info */}
             {selectedBrief && (
               <>
@@ -779,10 +802,10 @@ export default function KontenKreatorDashboard() {
 
                 {/* Brief content */}
                 {selectedBrief.briefContent ? (
-                  <div className="flex-1 flex flex-col gap-4 min-h-0">
-                    <p className="text-sm font-medium shrink-0">Isi Brief</p>
-                    <ScrollArea className="flex-1">
-                      <div className="space-y-6 pb-4">
+                  <div className="flex-1 min-h-0 flex flex-col gap-2">
+                    <p className="text-sm font-medium px-4 shrink-0">Isi Brief</p>
+                    <div className="flex-1 overflow-y-auto px-4 pb-20 touch-pan-y">
+                      <div className="space-y-6">
                         {selectedBrief.briefContent.split("\n\n------------------------------------------------------------\n\n").map((part, idx) => {
                           const isJJ = part.includes("JEDAG-JEDUG");
                           const isVO = part.includes("VOICE OVER");
@@ -799,21 +822,21 @@ export default function KontenKreatorDashboard() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  className="h-7 text-xs"
+                                  className="h-7 text-xs bg-muted/50 hover:bg-muted"
                                   onClick={() => handleCopyBrief(cleanPart)}
                                 >
                                   <Copy className="h-3 w-3 mr-1" />
                                   Salin
                                 </Button>
                               </div>
-                              <pre className="rounded-lg bg-muted/50 border p-4 text-sm leading-relaxed whitespace-pre-wrap font-mono">
+                              <pre className="rounded-lg bg-muted/50 border p-4 text-[13px] leading-relaxed whitespace-pre-wrap font-mono select-text">
                                 {cleanPart}
                               </pre>
                             </div>
                           )
                         })}
                       </div>
-                    </ScrollArea>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
