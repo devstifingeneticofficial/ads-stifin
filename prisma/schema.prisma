@@ -14,6 +14,7 @@ model User {
   password  String
   role      String   // PROMOTOR, KONTEN_KREATOR, ADVERTISER, STIFIN
   city      String?
+  phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -89,5 +90,14 @@ model BriefTemplate {
   name      String
   content   String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model NotificationTemplate {
+  id        String   @id @default(cuid())
+  slug      String   @unique // e.g., "payment-confirmed-promotor"
+  name      String
+  message   String
+  isActive  Boolean  @default(true)
   updatedAt DateTime @updatedAt
 }

@@ -17,7 +17,19 @@ import {
   Shield,
   Menu,
   X,
+  User as UserIcon,
 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 
 const navItems = [
   { key: "dashboard", label: "Dashboard", icon: Building2 },
@@ -35,11 +47,46 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, refreshSession } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showNotif, setShowNotif] = useState(false)
+
+  // Profile Edit State
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false)
+  const [editName, setEditName] = useState(user?.name || "")
+  const [editPhone, setEditPhone] = useState(user?.phone || "")
+  const [isUpdating, setIsUpdating] = useState(false)
+
+  useEffect(() => {
+    if (user) {
+      setEditName(user.name)
+      setEditPhone((user as any).phone || "")
+    }
+  }, [user])
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsUpdating(true)
+    try {
+      const res = await fetch("/api/users/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName, phone: editPhone }),
+      })
+
+      if (!res.ok) throw new Error("Gagal memperbarui profil")
+      
+      toast.success("Profil berhasil diperbarui!")
+      setProfileDialogOpen(false)
+      if (refreshSession) await refreshSession()
+    } catch (error) {
+      toast.error("Terjadi kesalahan saat menyimpan profil")
+    } finally {
+      setIsUpdating(false)
+    }
+  }
 
   const fetchNotifications = async () => {
     try {
@@ -136,7 +183,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
         {/* User Info */}
         <div className="p-3 border-t border-slate-100">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50">
+          <button 
+            onClick={() => setProfileDialogOpen(true)}
+            className="w-full flex items-center gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+          >
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white text-sm font-semibold">
               {user.name.charAt(0).toUpperCase()}
             </div>
@@ -146,9 +196,60 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 {config.label}
               </Badge>
             </div>
-          </div>
+          </button>
         </div>
       </aside>
+
+      {/* Profile Edit Dialog */}
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <form onSubmit={handleUpdateProfile}>
+            <DialogHeader>
+              <DialogTitle>Edit Profil</DialogTitle>
+              <DialogDescription>
+                Perbarui nama dan nomor WhatsApp Anda untuk menerima notifikasi.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Nama Lengkap</Label>
+                <Input
+                  id="name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Masukkan nama lengkap"
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="phone">Nomor WhatsApp</Label>
+                <Input
+                  id="phone"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="Contoh: 08123456789"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Gunakan format angka saja (contoh: 08123456789)
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setProfileDialogOpen(false)}
+                disabled={isUpdating}
+              >
+                Batal
+              </Button>
+              <Button type="submit" disabled={isUpdating}>
+                {isUpdating ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen">

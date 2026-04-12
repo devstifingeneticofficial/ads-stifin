@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { notifyStifin } from "@/lib/notifications"
+import { sendWhatsApp } from "@/lib/whatsapp"
 
 export async function POST(
   req: Request,
@@ -46,11 +47,38 @@ export async function POST(
       create: { ...data, adRequestId: id },
     })
 
+    // ── Notify Dashboard ─────────────────────────────────────────────────────
+    
     await notifyStifin(
       "Hasil Promotor",
       `Promotor ${adRequest.promotor.name} dari ${adRequest.city} mendapatkan ${totalClients} klien.`,
       "PROMOTOR_RESULT"
     )
+
+    // ── WhatsApp Notification (Respect Toggle) ──────────────────────────────
+    
+    const template = await db.notificationTemplate.findUnique({
+      where: { slug: "client-report-stifin" }
+    })
+
+    // Send only if template is active OR doesn't exist yet (default active)
+    if (!template || template.isActive) {
+      const stifinAdmins = await db.user.findMany({
+        where: { role: "STIFIN", phone: { not: null } }
+      })
+
+      for (const admin of stifinAdmins) {
+        const defaultMsg = `Admin: *${adRequest.promotor.name}* melaporkan hasil *${totalClients}* klien untuk iklan kota *${adRequest.city}*.`
+        const message = template 
+          ? template.message
+              .replace(/{promotor}/g, adRequest.promotor.name)
+              .replace(/{kota}/g, adRequest.city)
+              .replace(/{jumlah}/g, totalClients.toString())
+          : defaultMsg
+          
+        await sendWhatsApp(admin.phone || "", message)
+      }
+    }
 
     return NextResponse.json(result)
   } catch (error) {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { createNotification, notifyRole, notifyStifin } from "@/lib/notifications"
+import { createNotification, notifyRole } from "@/lib/notifications"
+import { sendWhatsApp } from "@/lib/whatsapp"
 
 export async function POST(
   req: Request,
@@ -42,7 +43,8 @@ export async function POST(
       include: { promotor: true },
     })
 
-    // Notify promotor
+    // ── Notify Dashboard ─────────────────────────────────────────────────────
+    
     await createNotification(
       adRequest.promotorId,
       "Konten Selesai!",
@@ -51,7 +53,6 @@ export async function POST(
       id
     )
 
-    // Notify advertiser
     await notifyRole(
       "ADVERTISER",
       "Konten Siap Dijadwalkan",
@@ -60,11 +61,23 @@ export async function POST(
       id
     )
 
-    await notifyStifin(
-      "Konten Selesai",
-      `Konten iklan untuk ${adRequest.city} oleh ${adRequest.promotor.name} sudah selesai dibuat.`,
-      "CONTENT_READY"
-    )
+    // ── WhatsApp Notification (Respect Toggle) ──────────────────────────────
+    
+    const template = await db.notificationTemplate.findUnique({
+      where: { slug: "content-finished-promotor" }
+    })
+
+    if (updated.promotor.phone && (!template || template.isActive)) {
+      const defaultMsg = `Halo *${updated.promotor.name}*, Konten iklan Anda untuk kota *${updated.city}* sudah selesai! Silakan cek dashboard Anda.`
+      const message = template 
+        ? template.message
+            .replace(/{promotor}/g, updated.promotor.name)
+            .replace(/{kota}/g, updated.city)
+            .replace(/{status}/g, "KONTEN SELESAI")
+        : defaultMsg
+        
+      await sendWhatsApp(updated.promotor.phone, message)
+    }
 
     return NextResponse.json(updated)
   } catch (error) {

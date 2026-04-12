@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { createNotification } from "@/lib/notifications"
+import { sendWhatsApp } from "@/lib/whatsapp"
 
 export async function POST(
   req: Request,
@@ -20,7 +21,11 @@ export async function POST(
       return NextResponse.json({ error: "Bukti transfer wajib diupload" }, { status: 400 })
     }
 
-    const adRequest = await db.adRequest.findUnique({ where: { id } })
+    const adRequest = await db.adRequest.findUnique({ 
+      where: { id },
+      include: { promotor: true }
+    })
+    
     if (!adRequest || adRequest.promotorId !== session.id) {
       return NextResponse.json({ error: "Pengajuan tidak ditemukan" }, { status: 404 })
     }
@@ -38,7 +43,7 @@ export async function POST(
       include: { promotor: true },
     })
 
-    // Notify konten kreator
+    // 1. Notify konten kreator via Dashboard
     const creators = await db.user.findMany({ where: { role: "KONTEN_KREATOR" } })
     for (const creator of creators) {
       await createNotification(
@@ -48,6 +53,39 @@ export async function POST(
         "AD_REQUEST",
         id
       )
+    }
+
+    // ── Send WhatsApp Notifications ──────────────────────────────────────────
+    
+    // Ambil template dari DB
+    const templatePromotor = await db.notificationTemplate.findUnique({ where: { slug: "payment-confirmed-promotor" } })
+    const templateAdvertiser = await db.notificationTemplate.findUnique({ where: { slug: "payment-confirmed-advertiser" } })
+
+    const replaceVars = (text: string) => {
+      return text
+        .replace(/{promotor}/g, updated.promotor.name)
+        .replace(/{kota}/g, updated.city)
+        .replace(/{status}/g, "MENUNGGU KONTEN")
+    }
+
+    // 2. WhatsApp to Promotor (Check if active)
+    if (updated.promotor.phone && (!templatePromotor || templatePromotor.isActive)) {
+      const defaultMsg = `Halo *${updated.promotor.name}*, Pembayaran iklan Anda untuk kota *${updated.city}* telah diterima. Status: *MENUNGGU KONTEN*. Terimakasih!`
+      const message = templatePromotor ? replaceVars(templatePromotor.message) : defaultMsg
+      await sendWhatsApp(updated.promotor.phone, message)
+    }
+
+    // 3. WhatsApp to Advertiser(s) (Check if active)
+    if (!templateAdvertiser || templateAdvertiser.isActive) {
+      const advertisers = await db.user.findMany({
+        where: { role: "ADVERTISER", phone: { not: null } }
+      })
+
+      for (const adv of advertisers) {
+        const defaultMsg = `*NOTIFIKASI PEMBAYARAN*\n\nPromotor *${updated.promotor.name}* telah mengunggah bukti bayar untuk iklan *${updated.city}*.\n\nStatus: Menunggu Konten\nSegera cek dashboard Anda untuk detailnya.`
+        const message = templateAdvertiser ? replaceVars(templateAdvertiser.message) : defaultMsg
+        await sendWhatsApp(adv.phone || "", message)
+      }
     }
 
     return NextResponse.json(updated)

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { createNotification, notifyStifin } from "@/lib/notifications"
+import { createNotification } from "@/lib/notifications"
+import { sendWhatsApp } from "@/lib/whatsapp"
 
 export async function POST(
   req: Request,
@@ -43,7 +44,8 @@ export async function POST(
       include: { promotor: true },
     })
 
-    // Notify promotor
+    // ── Notify Dashboard ─────────────────────────────────────────────────────
+    
     await createNotification(
       adRequest.promotorId,
       "Iklan Telah Dijadwalkan",
@@ -52,11 +54,23 @@ export async function POST(
       id
     )
 
-    await notifyStifin(
-      "Iklan Dijadwalkan",
-      `Iklan untuk ${adRequest.city} oleh ${adRequest.promotor.name} telah dijadwalkan.`,
-      "AD_SCHEDULED"
-    )
+    // ── WhatsApp Notification (Respect Toggle) ──────────────────────────────
+    
+    const template = await db.notificationTemplate.findUnique({
+      where: { slug: "ad-scheduled-promotor" }
+    })
+
+    if (updated.promotor.phone && (!template || template.isActive)) {
+      const defaultMsg = `Kabar gembira *${updated.promotor.name}*! Iklan Anda untuk kota *${updated.city}* telah dijadwalkan tayang. Silakan pantau perkembangannya!`
+      const message = template 
+        ? template.message
+            .replace(/{promotor}/g, updated.promotor.name)
+            .replace(/{kota}/g, updated.city)
+            .replace(/{status}/g, "IKLAN DIJADWALKAN")
+        : defaultMsg
+        
+      await sendWhatsApp(updated.promotor.phone, message)
+    }
 
     return NextResponse.json(updated)
   } catch (error) {
