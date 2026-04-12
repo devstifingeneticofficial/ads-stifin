@@ -64,6 +64,7 @@ export async function POST(
     const replaceVars = (text: string) => {
       return text
         .replace(/{promotor}/g, updated.promotor.name)
+        .replace(/{city}/g, updated.city)
         .replace(/{kota}/g, updated.city)
         .replace(/{status}/g, "MENUNGGU KONTEN")
     }

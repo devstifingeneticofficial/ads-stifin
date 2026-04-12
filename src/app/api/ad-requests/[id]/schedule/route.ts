@@ -65,6 +65,7 @@ export async function POST(
       const message = template 
         ? template.message
             .replace(/{promotor}/g, updated.promotor.name)
+            .replace(/{city}/g, updated.city)
             .replace(/{kota}/g, updated.city)
             .replace(/{status}/g, "IKLAN DIJADWALKAN")
         : defaultMsg

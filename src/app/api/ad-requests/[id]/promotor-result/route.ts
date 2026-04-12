@@ -72,6 +72,7 @@ export async function POST(
         const message = template 
           ? template.message
               .replace(/{promotor}/g, adRequest.promotor.name)
+              .replace(/{city}/g, adRequest.city)
               .replace(/{kota}/g, adRequest.city)
               .replace(/{jumlah}/g, totalClients.toString())
           : defaultMsg
