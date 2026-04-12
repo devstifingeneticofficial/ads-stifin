@@ -101,7 +101,7 @@ export async function POST(req: Request) {
     let dateStr = `${startDateObj.getDate()} ${months[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`
 
     if (testEndDateObj) {
-      dayStr = `${dayNames[startDateObj.getDay()]} - ${dayNames[testEndDateObj.getDay()]}`
+      dayStr = `${dayNames[startDateObj.getDay()]} & ${dayNames[testEndDateObj.getDay()]}`
       // If same month and year
       if (startDateObj.getMonth() === testEndDateObj.getMonth() && startDateObj.getFullYear() === testEndDateObj.getFullYear()) {
          dateStr = `${startDateObj.getDate()} - ${testEndDateObj.getDate()} ${months[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`
