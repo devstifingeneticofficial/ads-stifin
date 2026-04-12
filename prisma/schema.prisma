@@ -26,6 +26,7 @@ model AdRequest {
   id              String          @id @default(cuid())
   city            String
   startDate       DateTime
+  testEndDate     DateTime?
   durationDays    Int
   dailyBudget     Int
   totalBudget     Int

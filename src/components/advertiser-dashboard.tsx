@@ -84,6 +84,7 @@ interface AdRequest {
   promotor: { id: string; name: string; email: string; city: string }
   city: string
   startDate: string
+  testEndDate: string | null
   durationDays: number
   dailyBudget: number
   totalBudget: number
@@ -119,6 +120,30 @@ const formatShortDate = (dateStr: string): string => {
     month: "short",
     year: "numeric",
   })
+}
+
+const formatTestDate = (start: string, end?: string | null) => {
+  const s = new Date(start)
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+  
+  if (!end) {
+    return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  
+  const e = new Date(end)
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
+}
+
+const formatToDateTimeLocal = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
@@ -168,6 +193,7 @@ export default function AdvertiserDashboard() {
   const [reportDialogOpen, setReportDialogOpen] = useState(false)
   const [adStartDate, setAdStartDate] = useState("")
   const [adEndDate, setAdEndDate] = useState("")
+  const [scheduleMode, setScheduleMode] = useState<"DEFAULT" | "CUSTOM">("DEFAULT")
   const [inputAmountSpent, setInputAmountSpent] = useState("")
   const [inputTotalLeads, setInputTotalLeads] = useState("")
 
@@ -218,6 +244,25 @@ export default function AdvertiserDashboard() {
       fetchWaChannelLink()
     }
   }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink])
+
+  useEffect(() => {
+    if (selectedAd && scheduleMode === "DEFAULT") {
+      const baseDate = new Date(selectedAd.startDate)
+      
+      // Default Start: T - 4 days at 16:00
+      const start = new Date(baseDate)
+      start.setDate(baseDate.getDate() - 4)
+      start.setHours(16, 0, 0, 0)
+      
+      // Default End: Start + Duration at 21:00
+      const end = new Date(start)
+      end.setDate(start.getDate() + selectedAd.durationDays)
+      end.setHours(21, 0, 0, 0)
+
+      setAdStartDate(formatToDateTimeLocal(start))
+      setAdEndDate(formatToDateTimeLocal(end))
+    }
+  }, [selectedAd, scheduleMode])
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -412,8 +457,8 @@ export default function AdvertiserDashboard() {
                     <CardContent className="px-4 md:px-6 pb-4">
                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 text-sm border-t border-slate-50 mt-2">
                           <div className="space-y-1">
-                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><Calendar className="h-3 w-3" /> Tanggal Mulai</p>
-                            <p className="font-semibold text-slate-800">{formatShortDate(ad.startDate)}</p>
+                            <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><Calendar className="h-3 w-3" /> Tanggal Tes STIFIn</p>
+                            <p className="font-semibold text-slate-800">{formatTestDate(ad.startDate, ad.testEndDate)}</p>
                           </div>
                           <div className="space-y-1">
                             <p className="text-muted-foreground text-[11px] flex items-center gap-1.5 font-medium"><Clock className="h-3 w-3" /> Durasi</p>
@@ -461,8 +506,8 @@ export default function AdvertiserDashboard() {
                           </div>
                           <div className="flex items-center gap-2">
                              {ad.status === "KONTEN_SELESAI" && (
-                                <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); }}>
-                                   <CalendarCheck className="h-4 w-4" /> Susun Jadwal
+                                <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
+                                   <CalendarCheck className="h-4 w-4" /> Jadwalkan Iklan
                                 </Button>
                              )}
                              {ad.status === "IKLAN_BERJALAN" && (
@@ -603,22 +648,54 @@ export default function AdvertiserDashboard() {
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSchedule} className="space-y-4">
             <DialogHeader>
-              <DialogTitle className="font-semibold">Penyusunan Jadwal</DialogTitle>
-              <DialogDescription className="text-xs">Tentukan rentang tanggal tayang iklan.</DialogDescription>
+              <DialogTitle className="font-semibold">Penjadwalan Iklan</DialogTitle>
+              <DialogDescription className="text-xs">Tentukan jadwal tayang iklan di Facebook/Instagram.</DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-2">
-               <div className="space-y-1">
-                 <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Mulai</Label>
-                 <Input type="date" value={adStartDate} onChange={(e) => setAdStartDate(e.target.value)} required />
+            
+            <div className="space-y-4 py-2">
+               <div className="space-y-2">
+                  <Label className="text-[11px] font-bold uppercase text-muted-foreground">Mode Jadwal</Label>
+                  <Tabs value={scheduleMode} onValueChange={(v) => setScheduleMode(v as "DEFAULT" | "CUSTOM")}>
+                     <TabsList className="grid grid-cols-2">
+                        <TabsTrigger value="DEFAULT">Default (Otomatis)</TabsTrigger>
+                        <TabsTrigger value="CUSTOM">Custom (Manual)</TabsTrigger>
+                     </TabsList>
+                  </Tabs>
                </div>
-               <div className="space-y-1">
-                 <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Selesai</Label>
-                 <Input type="date" value={adEndDate} onChange={(e) => setAdEndDate(e.target.value)} required />
+
+               <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Mulai Tayang</Label>
+                    <Input 
+                      type="datetime-local" 
+                      value={adStartDate} 
+                      onChange={(e) => setAdStartDate(e.target.value)} 
+                      disabled={scheduleMode === "DEFAULT"}
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Berakhir Tayang</Label>
+                    <Input 
+                      type="datetime-local" 
+                      value={adEndDate} 
+                      onChange={(e) => setAdEndDate(e.target.value)} 
+                      disabled={scheduleMode === "DEFAULT"}
+                      required 
+                    />
+                  </div>
                </div>
+
+               {scheduleMode === "DEFAULT" && selectedAd && (
+                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-[10px] text-blue-700 font-medium">
+                   <p>Sesuai permintaan promotor (Tgl {formatShortDate(selectedAd.startDate)}, Durasi {selectedAd.durationDays} hari), iklan dijadwalkan otomatis tayang 4 hari sebelumnya.</p>
+                 </div>
+               )}
             </div>
+
             <DialogFooter>
               <Button type="button" variant="ghost" size="sm" onClick={() => setScheduleDialogOpen(false)}>Batal</Button>
-              <Button type="submit" size="sm" disabled={isSubmitting}>{isSubmitting ? "Memproses..." : "Konfirmasi"}</Button>
+              <Button type="submit" size="sm" className="bg-slate-900 text-white font-bold" disabled={isSubmitting}>{isSubmitting ? "Memproses..." : "Konfirmasi Jadwal"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

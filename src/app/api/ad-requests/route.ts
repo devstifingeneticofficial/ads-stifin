@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Hanya Promotor yang dapat membuat pengajuan" }, { status: 403 })
     }
 
-    const { city, startDate, durationDays, dailyBudget } = await req.json()
+    const { city, startDate, testEndDate, durationDays, dailyBudget } = await req.json()
 
     if (!city || !startDate || !durationDays || !dailyBudget) {
       return NextResponse.json({ error: "Semua field wajib diisi" }, { status: 400 })
@@ -91,9 +91,24 @@ export async function POST(req: Request) {
     const totalPayment = totalBudget + ppn
 
     const startDateObj = new Date(startDate)
-    const day = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][startDateObj.getDay()]
+    const testEndDateObj = testEndDate ? new Date(testEndDate) : null
+
+    // Generate date string for placeholders
     const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
-    const dateStr = `${startDateObj.getDate()} ${months[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`
+    const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"]
+    
+    let dayStr = dayNames[startDateObj.getDay()]
+    let dateStr = `${startDateObj.getDate()} ${months[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`
+
+    if (testEndDateObj) {
+      dayStr = `${dayNames[startDateObj.getDay()]} - ${dayNames[testEndDateObj.getDay()]}`
+      // If same month and year
+      if (startDateObj.getMonth() === testEndDateObj.getMonth() && startDateObj.getFullYear() === testEndDateObj.getFullYear()) {
+         dateStr = `${startDateObj.getDate()} - ${testEndDateObj.getDate()} ${months[startDateObj.getMonth()]} ${startDateObj.getFullYear()}`
+      } else {
+         dateStr = `${startDateObj.getDate()} ${months[startDateObj.getMonth()]} - ${testEndDateObj.getDate()} ${months[testEndDateObj.getMonth()]} ${testEndDateObj.getFullYear()}`
+      }
+    }
 
     // Fetch dynamic templates from master database
     const masterVO = await db.briefTemplate.findMany({ where: { type: "VO" } })
@@ -105,7 +120,7 @@ export async function POST(req: Request) {
     const replacePlaceholders = (text: string) => {
       return text
         .replace(/{city}/g, city)
-        .replace(/{day}/g, day)
+        .replace(/{day}/g, dayStr)
         .replace(/{date}/g, dateStr)
     }
 
@@ -113,17 +128,16 @@ export async function POST(req: Request) {
       const selectedVO = masterVO[Math.floor(Math.random() * masterVO.length)]
       finalVO = replacePlaceholders(selectedVO.content)
     } else {
-      // Fallback to legacy hardcoded templates if DB is empty
-      const { vo } = generateBriefs(city, startDateObj)
-      finalVO = vo
+      // Fallback
+      finalVO = `Tes STIFIn di ${city} pada hari ${dayStr} tanggal ${dateStr}. Daftarkan diri Anda sekarang!`
     }
 
     if (masterJJ.length > 0) {
       const selectedJJ = masterJJ[Math.floor(Math.random() * masterJJ.length)]
       finalJJ = replacePlaceholders(selectedJJ.content)
     } else {
-      const { jj } = generateBriefs(city, startDateObj)
-      finalJJ = jj
+      // Fallback
+      finalJJ = `STIFIn ${city}! ${dayStr}, ${dateStr}. Klik link di bio!`
     }
 
     const briefType = "JJ & VO"
@@ -133,6 +147,7 @@ export async function POST(req: Request) {
       data: {
         city,
         startDate: startDateObj,
+        testEndDate: testEndDateObj,
         durationDays,
         dailyBudget,
         totalBudget,

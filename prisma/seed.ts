@@ -36,27 +36,27 @@ async function main() {
     {
       slug: "payment-confirmed-promotor",
       name: "Pembayaran Valid (Promotor)",
-      message: "Halo *{promotor}*, Pembayaran iklan Anda untuk kota *{city}* telah diterima. Terimakasih!",
+      message: "Halo *{promotor}*, Pembayaran iklan Anda untuk kota *{city}* telah diterima. Tim kami sedang menyiapkan konten terbaik untuk Anda. Terimakasih!",
     },
     {
       slug: "payment-confirmed-advertiser",
       name: "Pembayaran Masuk (Advertiser)",
-      message: "*NOTIFIKASI*: Promotor *{promotor}* telah bayar untuk *{city}*.",
+      message: "*NOTIFIKASI*: Promotor *{promotor}* telah melakukan pembayaran untuk pengajuan di *{city}*. Segera proses brief dan konten.",
     },
     {
       slug: "content-finished-promotor",
       name: "Konten Selesai (Promotor)",
-      message: "Halo *{promotor}*, Konten iklan *{city}* sudah selesai! Silakan cek dashboard.",
+      message: "Halo *{promotor}*, Konten iklan Anda di *{city}* sudah selesai! Silakan cek dashboard untuk melihat hasilnya di channel WA.",
     },
     {
       slug: "ad-scheduled-promotor",
       name: "Iklan Dijadwalkan (Promotor)",
-      message: "Kabar gembira *{promotor}*! Iklan *{city}* telah dijadwalkan tayang.",
+      message: "Kabar gembira *{promotor}*! Iklan Anda di *{city}* telah dijadwalkan tayang pada *{date}*. Semoga hasilnya maksimal!",
     },
     {
       slug: "client-report-stifin",
       name: "Laporan Klien (Admin STIFIn)",
-      message: "Admin: *{promotor}* melaporkan hasil *{jumlah}* klien untuk iklan kota *{city}*.",
+      message: "*LAPORAN*: Promotor *{promotor}* melaporkan hasil *{jumlah}* klien untuk iklan di kota *{city}*.",
     },
   ]
 
@@ -78,12 +78,12 @@ async function main() {
     {
       type: "VO",
       name: "Default VO Script",
-      content: "Halo warga {city}! Hari ini hari {day} tanggal {date}, ada info menarik buat kamu...",
+      content: "[ BRIEF VOICE OVER (VO) ]\n\n- Hook: Halo warga {city}! Ada info penting buat kamu.\n- Isi: Yang mau Tes STIFIn, jangan sampai ketinggalan. Catat ya, hari {day} tanggal {date}.\n- CTA: Klik link di bio untuk daftar sekarang!",
     },
     {
       type: "JJ",
       name: "Default Jedag Jedug Style",
-      content: "Vibe asik di {city}! Cocok banget buat nemenin hari {day} kamu. Cek {date}!",
+      content: "[ BRIEF JEDAG-JEDUG (JJ) ]\n\n- Scene: Cinematic {city} vibes.\n- Text: TES STIFIn {city} IS BACK!\n- Info: Hari {day}, {date}.\n- CTA: Daftar di bio!",
     },
   ]
 

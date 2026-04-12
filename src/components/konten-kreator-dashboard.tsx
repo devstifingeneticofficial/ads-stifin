@@ -62,6 +62,7 @@ interface AdRequest {
   promotor: { name: string }
   city: string
   startDate: string
+  testEndDate: string | null
   durationDays: number
   dailyBudget: number
   totalBudget: number
@@ -107,6 +108,21 @@ const formatDateTime = (dateStr: string): string => {
     hour: "2-digit",
     minute: "2-digit",
   })
+}
+
+const formatTestDate = (start: string, end?: string | null) => {
+  const s = new Date(start)
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+  
+  if (!end) {
+    return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  
+  const e = new Date(end)
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
 }
 
 const statusConfig: Record<
@@ -455,9 +471,15 @@ export default function KontenKreatorDashboard() {
                     <Megaphone className="h-4 w-4 text-muted-foreground" />
                     {ad.promotor?.name} - Iklan {ad.city}
                   </CardTitle>
-                  <CardDescription className="text-[10px] uppercase font-medium tracking-wider">
-                    Dibuat {formatDate(ad.createdAt)}
-                  </CardDescription>
+                  <div className="flex items-center gap-4">
+                     <CardDescription className="text-[10px] uppercase font-medium tracking-wider">
+                       Dibuat {formatDate(ad.createdAt)}
+                     </CardDescription>
+                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                        <span>TES STIFIn:</span>
+                        <span>{formatTestDate(ad.startDate, ad.testEndDate)}</span>
+                     </div>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {ad.briefType && getBriefTypeBadge(ad.briefType)}

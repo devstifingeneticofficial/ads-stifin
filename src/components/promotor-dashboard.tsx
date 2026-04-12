@@ -65,6 +65,7 @@ interface AdRequest {
   id: string
   city: string
   startDate: string
+  testEndDate: string | null
   durationDays: number
   dailyBudget: number
   totalBudget: number
@@ -94,6 +95,21 @@ const formatDate = (dateStr: string): string => {
     month: "long",
     year: "numeric",
   })
+}
+
+const formatTestDate = (start: string, end?: string | null) => {
+  const s = new Date(start)
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+  
+  if (!end) {
+    return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  
+  const e = new Date(end)
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
 }
 
 const statusConfig: Record<
@@ -165,9 +181,10 @@ const STATUS_ORDER = [
   "SELESAI",
 ]
 
-const isAtOrAfter = (status: string, target: string): boolean => {
-  return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
-}
+  const isAtOrAfter = (status: string, target: string): boolean => {
+    return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
+  }
+
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -186,8 +203,10 @@ export default function PromotorDashboard() {
   const [resultDialogId, setResultDialogId] = useState<string | null>(null)
 
   // Form state for create
+  const [testMode, setTestMode] = useState<"1DAY" | "2DAYS">("1DAY")
   const [formCity, setFormCity] = useState("")
   const [formStartDate, setFormStartDate] = useState("")
+  const [formEndDate, setFormEndDate] = useState("")
   const [formDuration, setFormDuration] = useState("")
   const [formDailyBudget, setFormDailyBudget] = useState("")
 
@@ -263,7 +282,8 @@ export default function PromotorDashboard() {
     const filtered = adRequests.filter((ad) => {
       if (tabType === "PAY") return ad.status === "MENUNGGU_PEMBAYARAN"
       if (tabType === "CONTENT") return ["MENUNGGU_KONTEN", "DIPROSES"].includes(ad.status)
-      if (tabType === "PROCESS") return ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(ad.status)
+      if (tabType === "PROCESS") return ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN"].includes(ad.status)
+      if (tabType === "ACTIVE") return ad.status === "IKLAN_BERJALAN"
       if (tabType === "DONE") return ad.status === "SELESAI"
       return true
     })
@@ -301,12 +321,12 @@ export default function PromotorDashboard() {
               {/* Info grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                 <div className="space-y-1">
-                  <p className="text-muted-foreground flex items-center gap-1">
+                  <p className="text-muted-foreground flex items-center gap-1 font-medium text-[11px]">
                     <Calendar className="h-3 w-3" />
-                    Tanggal Mulai
+                    Tanggal Tes STIFIn
                   </p>
-                  <p className="font-medium">
-                    {formatDate(ad.startDate)}
+                  <p className="font-bold text-slate-800">
+                    {formatTestDate(ad.startDate, ad.testEndDate)}
                   </p>
                 </div>
                 <div className="space-y-1">
@@ -695,6 +715,7 @@ export default function PromotorDashboard() {
         body: JSON.stringify({
           city: formCity,
           startDate: formStartDate,
+          testEndDate: testMode === "2DAYS" ? formEndDate : null,
           durationDays,
           dailyBudget,
         }),
@@ -1020,15 +1041,38 @@ export default function PromotorDashboard() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="startDate">Tanggal Mulai</Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={formStartDate}
-                      onChange={(e) => setFormStartDate(e.target.value)}
-                    />
-                  </div>
+                   <div className="space-y-2">
+                     <Label className="text-[11px] font-bold uppercase text-muted-foreground">Opsi Durasi Tes</Label>
+                     <Tabs value={testMode} onValueChange={(v) => setTestMode(v as "1DAY" | "2DAYS")}>
+                        <TabsList className="grid grid-cols-2 h-8">
+                           <TabsTrigger value="1DAY" className="text-xs">1 Hari</TabsTrigger>
+                           <TabsTrigger value="2DAYS" className="text-xs">2 Hari</TabsTrigger>
+                        </TabsList>
+                     </Tabs>
+                   </div>
+
+                   <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="startDate" className="text-[11px] font-semibold">{testMode === "1DAY" ? "Tanggal Tes STIFIn" : "Tes Mulai"}</Label>
+                        <Input
+                          id="startDate"
+                          type="date"
+                          value={formStartDate}
+                          onChange={(e) => setFormStartDate(e.target.value)}
+                        />
+                      </div>
+                      {testMode === "2DAYS" && (
+                         <div className="space-y-2">
+                           <Label htmlFor="endDate" className="text-[11px] font-semibold">Tes Selesai</Label>
+                           <Input
+                             id="endDate"
+                             type="date"
+                             value={formEndDate}
+                             onChange={(e) => setFormEndDate(e.target.value)}
+                           />
+                         </div>
+                      )}
+                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="duration">Durasi Iklan (hari)</Label>
@@ -1122,9 +1166,17 @@ export default function PromotorDashboard() {
               </TabsTrigger>
               <TabsTrigger value="PROCESS" className="gap-2 text-[11px] font-bold">
                 Diproses
-                {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(r.status)).length > 0 && (
+                {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN"].includes(r.status)).length > 0 && (
+                  <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
+                    {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN"].includes(r.status)).length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="ACTIVE" className="gap-2 text-[11px] font-bold">
+                Iklan Aktif
+                {adRequests.filter(r => r.status === "IKLAN_BERJALAN").length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border-purple-200">
-                    {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN", "IKLAN_BERJALAN"].includes(r.status)).length}
+                    {adRequests.filter(r => r.status === "IKLAN_BERJALAN").length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -1141,6 +1193,9 @@ export default function PromotorDashboard() {
             </TabsContent>
             <TabsContent value="PROCESS" className="mt-0">
                {renderAdCards("PROCESS")}
+            </TabsContent>
+            <TabsContent value="ACTIVE" className="mt-0">
+               {renderAdCards("ACTIVE")}
             </TabsContent>
             <TabsContent value="DONE" className="mt-0">
                {renderAdCards("DONE")}
@@ -1189,7 +1244,7 @@ export default function PromotorDashboard() {
                             Kota
                           </th>
                           <th className="text-left p-4 font-medium text-muted-foreground">
-                            Tanggal
+                            Tanggal Tes STIFIn
                           </th>
                           <th className="text-left p-4 font-medium text-muted-foreground">
                             Durasi
@@ -1210,7 +1265,7 @@ export default function PromotorDashboard() {
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
                           >
                             <td className="p-4 font-medium">{ad.city}</td>
-                            <td className="p-4">{formatDate(ad.startDate)}</td>
+                            <td className="p-4">{formatTestDate(ad.startDate, ad.testEndDate)}</td>
                             <td className="p-4">{ad.durationDays} hari</td>
                             <td className="p-4">
                               {formatRupiah(ad.totalPayment)}
@@ -1234,19 +1289,18 @@ export default function PromotorDashboard() {
                           {getStatusBadge(ad.status)}
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Tanggal: </span>
-                            <span>{formatDate(ad.startDate)}</span>
+                          <div className="space-y-0.5">
+                            <span className="text-muted-foreground block text-[10px] uppercase font-bold">Tes STIFIn</span>
+                            <span className="font-semibold text-[11px]">{formatTestDate(ad.startDate, ad.testEndDate)}</span>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Durasi: </span>
-                            <span>{ad.durationDays} hari</span>
+                          <div className="space-y-0.5">
+                            <span className="text-muted-foreground block text-[10px] uppercase font-bold">Durasi</span>
+                            <span className="font-semibold text-[11px]">{ad.durationDays} hari</span>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Budget: </span>
-                            <span>{formatRupiah(ad.totalPayment)}</span>
+                          <div className="space-y-0.5">
+                            <span className="text-muted-foreground block text-[10px] uppercase font-bold">Budget</span>
+                            <span className="font-semibold text-[11px]">{formatRupiah(ad.totalPayment)}</span>
                           </div>
-
                         </div>
                       </div>
                     ))}
@@ -1405,7 +1459,7 @@ export default function PromotorDashboard() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-startDate">Tanggal Mulai</Label>
+              <Label htmlFor="edit-startDate">Tanggal Tes STIFIn</Label>
               <Input
                 id="edit-startDate"
                 type="date"
