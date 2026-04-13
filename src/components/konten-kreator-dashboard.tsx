@@ -464,30 +464,30 @@ export default function KontenKreatorDashboard() {
       <div className="space-y-4">
         {filtered.map((ad) => (
           <Card key={ad.id} className="overflow-hidden border-slate-200">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                <div className="space-y-1">
-                  <CardTitle className="text-base flex items-center gap-2 font-semibold">
+            <CardHeader className="px-4 py-3 pb-0">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1">
+                <div className="space-y-0.5">
+                  <CardTitle className="text-base flex items-center gap-2 font-bold">
                     <Megaphone className="h-4 w-4 text-muted-foreground" />
-                    {ad.promotor?.name} - Iklan {ad.city}
+                    {ad.promotor?.name} - {ad.city}
                   </CardTitle>
-                  <div className="flex items-center gap-4">
-                     <CardDescription className="text-[10px] uppercase font-medium tracking-wider">
+                  <div className="flex items-center gap-3">
+                     <CardDescription className="text-[10px] font-medium italic">
                        Dibuat {formatDate(ad.createdAt)}
                      </CardDescription>
-                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                     <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded uppercase tracking-tight">
                         <span>TES STIFIn:</span>
                         <span>{formatTestDate(ad.startDate, ad.testEndDate)}</span>
                      </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap sm:mt-0 mt-1">
                   {ad.briefType && getBriefTypeBadge(ad.briefType)}
                   {getStatusBadge(ad.status)}
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="px-4 py-2 space-y-3">
               {/* Brief Content Preview */}
               {ad.briefContent && (
                 <div className="space-y-2">

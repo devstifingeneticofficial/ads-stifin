@@ -130,16 +130,9 @@ const statusConfig: Record<
     variant: "outline",
     className: "border-green-500 text-green-700 bg-green-50",
   },
-  IKLAN_BERJALAN: {
-    label: "Iklan Berjalan",
-    variant: "outline",
-    className: "border-purple-500 text-purple-700 bg-purple-50",
-  },
-  SELESAI: {
-    label: "Selesai",
-    variant: "secondary",
-    className: "border-gray-400 text-gray-600 bg-gray-100",
-  },
+  IKLAN_BERJALAN: { label: "Iklan Berjalan", variant: "outline", className: "border-purple-500 text-purple-700 bg-purple-50" },
+  SELESAI: { label: "Selesai", variant: "secondary", className: "border-gray-400 text-gray-600 bg-gray-100" },
+  FINAL: { label: "Iklan Final", variant: "default", className: "bg-slate-900 text-white border-slate-900" },
 }
 
 const getStatusBadge = (status: string) => {

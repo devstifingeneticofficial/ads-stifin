@@ -141,16 +141,9 @@ const statusConfig: Record<
     variant: "outline",
     className: "border-blue-500 text-blue-700 bg-blue-50",
   },
-  IKLAN_BERJALAN: {
-    label: "Iklan Berjalan",
-    variant: "outline",
-    className: "border-purple-500 text-purple-700 bg-purple-50",
-  },
-  SELESAI: {
-    label: "Selesai",
-    variant: "secondary",
-    className: "border-gray-400 text-gray-600 bg-gray-100",
-  },
+  IKLAN_BERJALAN: { label: "Iklan Berjalan", variant: "outline", className: "border-purple-500 text-purple-700 bg-purple-50" },
+  SELESAI: { label: "Selesai", variant: "secondary", className: "border-gray-400 text-gray-600 bg-gray-100" },
+  FINAL: { label: "Iklan Final", variant: "default", className: "bg-slate-900 text-white border-slate-900" },
 }
 
 const getStatusBadge = (status: string) => {
@@ -284,7 +277,7 @@ export default function PromotorDashboard() {
       if (tabType === "CONTENT") return ["MENUNGGU_KONTEN", "DIPROSES"].includes(ad.status)
       if (tabType === "PROCESS") return ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN"].includes(ad.status)
       if (tabType === "ACTIVE") return ad.status === "IKLAN_BERJALAN"
-      if (tabType === "DONE") return ad.status === "SELESAI"
+      if (tabType === "DONE") return ["SELESAI", "FINAL"].includes(ad.status)
       return true
     })
 
@@ -303,54 +296,54 @@ export default function PromotorDashboard() {
       <div className="space-y-4">
         {filtered.map((ad) => (
           <Card key={ad.id}>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="space-y-1">
-                  <CardTitle className="text-base flex items-center gap-2">
+            <CardHeader className="px-4 py-3 pb-0">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                <div className="space-y-0.5">
+                  <CardTitle className="text-base font-bold flex items-center gap-1.5">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
                     {ad.city}
                   </CardTitle>
-                  <CardDescription className="text-xs">
+                  <CardDescription className="text-[10px] italic">
                     Dibuat {formatDate(ad.createdAt)}
                   </CardDescription>
                 </div>
                 {getStatusBadge(ad.status)}
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="px-4 py-2 space-y-3">
               {/* Info grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                <div className="space-y-1">
-                  <p className="text-muted-foreground flex items-center gap-1 font-medium text-[11px]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 py-2 text-sm border-t border-slate-50 mt-1">
+                <div className="space-y-0.5">
+                  <p className="text-muted-foreground flex items-center gap-1 font-medium text-[10px] uppercase tracking-tight">
                     <Calendar className="h-3 w-3" />
                     Tanggal Tes STIFIn
                   </p>
-                  <p className="font-bold text-slate-800">
+                  <p className="font-bold text-slate-800 text-[13px]">
                     {formatTestDate(ad.startDate, ad.testEndDate)}
                   </p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-muted-foreground flex items-center gap-1">
+                <div className="space-y-0.5">
+                  <p className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-tight font-medium">
                     <Clock className="h-3 w-3" />
                     Durasi
                   </p>
-                  <p className="font-medium">{ad.durationDays} hari</p>
+                  <p className="font-bold text-slate-800 text-[13px]">{ad.durationDays} hari</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-muted-foreground flex items-center gap-1">
+                <div className="space-y-0.5">
+                  <p className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-tight font-medium">
                     <DollarSign className="h-3 w-3" />
                     Budget/Hari
                   </p>
-                  <p className="font-medium">
+                  <p className="font-bold text-slate-800 text-[13px]">
                     {formatRupiah(ad.dailyBudget)}
                   </p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-muted-foreground flex items-center gap-1">
+                <div className="space-y-0.5">
+                  <p className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-tight font-medium">
                     <DollarSign className="h-3 w-3" />
                     Total Bayar
                   </p>
-                  <p className="font-medium">
+                  <p className="font-bold text-slate-800 text-[13px]">
                     {formatRupiah(ad.totalPayment)}
                   </p>
                 </div>

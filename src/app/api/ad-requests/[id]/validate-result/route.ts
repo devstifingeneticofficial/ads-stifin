@@ -29,6 +29,11 @@ export async function POST(
       data: { status: "VALID" },
     })
 
+    await db.adRequest.update({
+      where: { id },
+      data: { status: "FINAL" },
+    })
+
     // Notify promotor
     await createNotification(
       adRequest.promotorId,
