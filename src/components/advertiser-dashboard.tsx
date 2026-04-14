@@ -129,11 +129,11 @@ const formatShortDate = (dateStr: string): string => {
 const formatTestDate = (start: string, end?: string | null) => {
   const s = new Date(start)
   const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
-  
+
   if (!end) {
     return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
   }
-  
+
   const e = new Date(end)
   if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
     return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
@@ -212,12 +212,12 @@ export default function AdvertiserDashboard() {
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorStats = (adRequests: AdRequest[]) => {
-    const stats: Record<string, { 
-      id: string, 
-      name: string, 
-      phone: string, 
-      totalConfirmed: number, 
-      totalClients: number, 
+    const stats: Record<string, {
+      id: string,
+      name: string,
+      phone: string,
+      totalConfirmed: number,
+      totalClients: number,
       totalSpent: number,
       totalLeads: number,
       totalDailyBudget: number,
@@ -312,12 +312,12 @@ export default function AdvertiserDashboard() {
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
       const baseDate = new Date(selectedAd.startDate)
-      
+
       // Default Start: T - 4 days at 16:00
       const start = new Date(baseDate)
       start.setDate(baseDate.getDate() - 4)
       start.setHours(16, 0, 0, 0)
-      
+
       // Default End: Start + Duration at 21:00
       const end = new Date(start)
       end.setDate(start.getDate() + selectedAd.durationDays)
@@ -389,10 +389,10 @@ export default function AdvertiserDashboard() {
       const res = await fetch(`/api/ad-requests/${selectedAd.id}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          amountSpent: parseInt(inputAmountSpent), 
+        body: JSON.stringify({
+          amountSpent: parseInt(inputAmountSpent),
           totalLeads: parseInt(inputTotalLeads),
-          cpr: parseFloat(inputCPR) 
+          cpr: parseFloat(inputCPR)
         }),
       })
       if (!res.ok) throw new Error("Gagal")
@@ -451,8 +451,8 @@ export default function AdvertiserDashboard() {
   const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
   const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
 
-  const filteredRequests = statusTab === "all" 
-    ? adRequests 
+  const filteredRequests = statusTab === "all"
+    ? adRequests
     : adRequests.filter(r => r.status === statusTab)
 
   if (loading) return <div className="p-8"><Skeleton className="h-40 w-full" /></div>
@@ -513,10 +513,10 @@ export default function AdvertiserDashboard() {
         <TabsContent value="overview" className="space-y-4">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-               <div>
-                  <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
-                  <p className="text-xs text-muted-foreground">Kelola pengajuan iklan Anda</p>
-               </div>
+              <div>
+                <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
+                <p className="text-xs text-muted-foreground">Kelola pengajuan iklan Anda</p>
+              </div>
             </div>
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
@@ -542,106 +542,106 @@ export default function AdvertiserDashboard() {
                   <Card key={ad.id} className="shadow-none hover:border-slate-300 transition-all">
                     <CardHeader className="px-4 py-3 pb-0">
                       <div className="flex items-center justify-between">
-                         <div className="space-y-0.5">
-                            <CardTitle className="text-base font-bold flex items-center gap-1.5">
-                               <DollarSign className="h-4 w-4 text-muted-foreground" />
-                               {ad.city}
-                            </CardTitle>
-                            <p className="text-[10px] text-muted-foreground font-medium italic">Dibuat {formatDate(ad.createdAt)} • Promotor: {ad.promotor.name}</p>
-                         </div>
-                         {getStatusBadge(ad.status)}
+                        <div className="space-y-0.5">
+                          <CardTitle className="text-base font-bold flex items-center gap-1.5">
+                            <DollarSign className="h-4 w-4 text-muted-foreground" />
+                            {ad.city}
+                          </CardTitle>
+                          <p className="text-[10px] text-muted-foreground font-medium italic">Dibuat {formatDate(ad.createdAt)} • Promotor: {ad.promotor.name}</p>
+                        </div>
+                        {getStatusBadge(ad.status)}
                       </div>
                     </CardHeader>
                     <CardContent className="px-4 py-3">
-                       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 py-2 text-sm border-t border-slate-50 mt-1">
-                          <div className="space-y-0.5">
-                            <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><Calendar className="h-3 w-3" /> Tanggal Tes STIFIn</p>
-                            <p className="font-bold text-slate-800 text-[13px]">{formatTestDate(ad.startDate, ad.testEndDate)}</p>
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><Clock className="h-3 w-3" /> Durasi</p>
-                            <p className="font-bold text-slate-800 text-[13px]">{ad.durationDays} hari</p>
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><DollarSign className="h-3 w-3" /> Budget/Hari</p>
-                            <p className="font-bold text-slate-800 text-[13px]">{formatRupiah(ad.dailyBudget)}</p>
-                          </div>
-                          <div className="space-y-0.5">
-                            <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><DollarSign className="h-3 w-3" /> Total Bayar</p>
-                            <p className="font-bold text-slate-800 text-[13px]">{formatRupiah(ad.totalPayment)}</p>
-                          </div>
-                       </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 py-2 text-sm border-t border-slate-50 mt-1">
+                        <div className="space-y-0.5">
+                          <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><Calendar className="h-3 w-3" /> Tanggal Tes STIFIn</p>
+                          <p className="font-bold text-slate-800 text-[13px]">{formatTestDate(ad.startDate, ad.testEndDate)}</p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><Clock className="h-3 w-3" /> Durasi</p>
+                          <p className="font-bold text-slate-800 text-[13px]">{ad.durationDays} hari</p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><DollarSign className="h-3 w-3" /> Budget/Hari</p>
+                          <p className="font-bold text-slate-800 text-[13px]">{formatRupiah(ad.dailyBudget)}</p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-muted-foreground text-[10px] flex items-center gap-1 font-medium uppercase tracking-tight"><DollarSign className="h-3 w-3" /> Total Bayar</p>
+                          <p className="font-bold text-slate-800 text-[13px]">{formatRupiah(ad.totalPayment)}</p>
+                        </div>
+                      </div>
 
-                       {ad.adReport && (
-                          <div className={`grid ${ad.promotorResult ? "grid-cols-4" : "grid-cols-3"} gap-2 py-2 bg-slate-50/50 rounded-lg px-2 mb-2 border border-slate-100`}>
-                             <div className="flex flex-col items-center justify-center border-r">
-                                <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">Leads</p>
-                                <p className="text-sm font-bold text-emerald-700 leading-none mt-1">{ad.adReport.totalLeads}</p>
-                             </div>
-                             <div className="flex flex-col items-center justify-center border-r">
-                                <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">CPR</p>
-                                <p className="text-sm font-bold text-blue-700 leading-none mt-1">{ad.adReport.cpr ? formatRupiah(Math.round(ad.adReport.cpr)) : "-"}</p>
-                             </div>
-                             <div className="flex flex-col items-center justify-center border-r last:border-r-0">
-                                <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">Spent</p>
-                                <p className="text-sm font-bold text-rose-700 leading-none mt-1">{formatRupiah(ad.adReport.amountSpent || 0)}</p>
-                             </div>
-                             {ad.promotorResult && (
-                                <div className="flex flex-col items-center justify-center">
-                                   <p className="text-[8px] uppercase font-bold text-purple-600 tracking-wider">Klien</p>
-                                   <p className="text-sm font-bold text-purple-700 leading-none mt-1">{ad.promotorResult.totalClients}</p>
-                                </div>
-                             )}
+                      {ad.adReport && (
+                        <div className={`grid ${ad.promotorResult ? "grid-cols-4" : "grid-cols-3"} gap-2 py-2 bg-slate-50/50 rounded-lg px-2 mb-2 border border-slate-100`}>
+                          <div className="flex flex-col items-center justify-center border-r">
+                            <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">Leads</p>
+                            <p className="text-sm font-bold text-emerald-700 leading-none mt-1">{ad.adReport.totalLeads}</p>
                           </div>
-                       )}
+                          <div className="flex flex-col items-center justify-center border-r">
+                            <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">CPR</p>
+                            <p className="text-sm font-bold text-blue-700 leading-none mt-1">{ad.adReport.cpr ? formatRupiah(Math.round(ad.adReport.cpr)) : "-"}</p>
+                          </div>
+                          <div className="flex flex-col items-center justify-center border-r last:border-r-0">
+                            <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">Spent</p>
+                            <p className="text-sm font-bold text-rose-700 leading-none mt-1">{formatRupiah(ad.adReport.amountSpent || 0)}</p>
+                          </div>
+                          {ad.promotorResult && (
+                            <div className="flex flex-col items-center justify-center">
+                              <p className="text-[8px] uppercase font-bold text-purple-600 tracking-wider">Klien</p>
+                              <p className="text-sm font-bold text-purple-700 leading-none mt-1">{ad.promotorResult.totalClients}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
-                       {ad.promotorNote && (
-                          <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-1">
-                             <p className="text-[9px] uppercase font-bold text-amber-600 tracking-wider mb-0.5">Catatan Promotor</p>
-                             <p className="text-xs text-amber-900 font-medium">{ad.promotorNote}</p>
-                          </div>
-                       )}
+                      {ad.promotorNote && (
+                        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-1">
+                          <p className="text-[9px] uppercase font-bold text-amber-600 tracking-wider mb-0.5">Catatan Promotor</p>
+                          <p className="text-xs text-amber-900 font-medium">{ad.promotorNote}</p>
+                        </div>
+                      )}
 
-                       <div className="flex items-center justify-between pt-1">
-                          <div className="flex gap-2">
-                             <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
-                                <a href={waChannelLink || "#"} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" /> LIHAT KONTEN (WA)</a>
-                             </Button>
-                             {ad.paymentProofUrl && (
-                                <Button size="sm" variant="ghost" asChild className="h-8 font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
-                                   <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
-                                </Button>
-                             )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                              {ad.status === "MENUNGGU_PEMBAYARAN" && (
-                                 <Button size="sm" className="h-8 font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
-                                    <DollarSign className="h-4 w-4" /> Konfirmasi Pembayaran
-                                 </Button>
-                              )}
-                             {ad.status === "KONTEN_SELESAI" && (
-                                <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
-                                   <CalendarCheck className="h-4 w-4" /> Jadwalkan Iklan
-                                </Button>
-                             )}
-                             {ad.status === "IKLAN_BERJALAN" && (
-                                <Button size="sm" variant="secondary" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
-                                   <Upload className="h-4 w-4" /> Upload Laporan
-                                </Button>
-                             )}
-                             
-                             <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                   <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="font-medium text-xs">
-                                   <DropdownMenuItem asChild>
-                                      <a href={`/api/ad-requests/${ad.id}/report/download`} target="_blank" className="flex items-center gap-2"><Download className="h-4 w-4" /> Export Report (PDF)</a>
-                                   </DropdownMenuItem>
-                                </DropdownMenuContent>
-                             </DropdownMenu>
-                          </div>
-                       </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                            <a href={waChannelLink || "#"} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" /> DOWNLOAD KONTEN</a>
+                          </Button>
+                          {ad.paymentProofUrl && (
+                            <Button size="sm" variant="ghost" asChild className="h-8 font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
+                              <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {ad.status === "MENUNGGU_PEMBAYARAN" && (
+                            <Button size="sm" className="h-8 font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
+                              <DollarSign className="h-4 w-4" /> Konfirmasi Pembayaran
+                            </Button>
+                          )}
+                          {ad.status === "KONTEN_SELESAI" && (
+                            <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
+                              <CalendarCheck className="h-4 w-4" /> Jadwalkan Iklan
+                            </Button>
+                          )}
+                          {ad.status === "IKLAN_BERJALAN" && (
+                            <Button size="sm" variant="secondary" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
+                              <Upload className="h-4 w-4" /> Upload Laporan
+                            </Button>
+                          )}
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="font-medium text-xs">
+                              <DropdownMenuItem asChild>
+                                <a href={`/api/ad-requests/${ad.id}/report/download`} target="_blank" className="flex items-center gap-2"><Download className="h-4 w-4" /> Export Report (PDF)</a>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 ))
@@ -653,8 +653,8 @@ export default function AdvertiserDashboard() {
         <TabsContent value="master" className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-               <h2 className="text-lg font-semibold">Master Template Brief</h2>
-               <p className="text-xs text-muted-foreground">Kelola format narasi video otomatis</p>
+              <h2 className="text-lg font-semibold">Master Template Brief</h2>
+              <p className="text-xs text-muted-foreground">Kelola format narasi video otomatis</p>
             </div>
             <Button onClick={() => { setEditingTemplate(null); setTemplateName(""); setTemplateContent(""); setIsTemplateDialogOpen(true); }} size="sm" className="font-semibold h-9 gap-2">
               <Plus className="h-4 w-4" /> Tambah Template
@@ -667,18 +667,18 @@ export default function AdvertiserDashboard() {
                 <div className={`h-1 w-full absolute top-0 left-0 ${t.type === "VO" ? "bg-blue-500" : "bg-purple-500"}`} />
                 <CardHeader className="p-4 pb-2">
                   <div className="flex items-center justify-between">
-                     <Badge variant="outline" className={`text-[10px] font-semibold ${t.type === "VO" ? "text-blue-600 border-blue-100 bg-blue-50/50" : "text-purple-600 border-purple-100 bg-purple-50/50"}`}>{t.type}</Badge>
-                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingTemplate(t); setTemplateType(t.type as "VO" | "JJ"); setTemplateName(t.name); setTemplateContent(t.content); setIsTemplateDialogOpen(true); }}><Settings className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500" onClick={() => handleDeleteTemplate(t.id)}><AlertCircle className="h-3.5 w-3.5" /></Button>
-                     </div>
+                    <Badge variant="outline" className={`text-[10px] font-semibold ${t.type === "VO" ? "text-blue-600 border-blue-100 bg-blue-50/50" : "text-purple-600 border-purple-100 bg-purple-50/50"}`}>{t.type}</Badge>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingTemplate(t); setTemplateType(t.type as "VO" | "JJ"); setTemplateName(t.name); setTemplateContent(t.content); setIsTemplateDialogOpen(true); }}><Settings className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500" onClick={() => handleDeleteTemplate(t.id)}><AlertCircle className="h-3.5 w-3.5" /></Button>
+                    </div>
                   </div>
                   <CardTitle className="text-base font-semibold mt-2">{t.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                   <div className="bg-slate-50 p-3 rounded text-xs font-mono text-slate-600 h-24 overflow-hidden border">
-                      {t.content}
-                   </div>
+                  <div className="bg-slate-50 p-3 rounded text-xs font-mono text-slate-600 h-24 overflow-hidden border">
+                    {t.content}
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -708,8 +708,8 @@ export default function AdvertiserDashboard() {
             </CardHeader>
             <CardContent className="pb-4 px-4">
               <div className="flex gap-2">
-                <Input 
-                  placeholder="https://whatsapp.com/channel/..." 
+                <Input
+                  placeholder="https://whatsapp.com/channel/..."
                   value={waChannelLink}
                   onChange={(e) => setWaChannelLink(e.target.value)}
                   className="bg-white text-xs h-9"
@@ -735,20 +735,20 @@ export default function AdvertiserDashboard() {
                 <Card key={tpl.slug} className={`border-slate-200 ${!isActive ? "opacity-60 grayscale" : ""}`}>
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                       <CardTitle className="text-sm font-semibold uppercase tracking-tight text-slate-700">{tpl.name}</CardTitle>
-                       <Switch className="data-[state=checked]:bg-emerald-500" checked={isActive} onCheckedChange={(c) => handleUpdateNotifTemplate(null, tpl.slug, c)} />
+                      <CardTitle className="text-sm font-semibold uppercase tracking-tight text-slate-700">{tpl.name}</CardTitle>
+                      <Switch className="data-[state=checked]:bg-emerald-500" checked={isActive} onCheckedChange={(c) => handleUpdateNotifTemplate(null, tpl.slug, c)} />
                     </div>
                     <CardDescription className="text-xs font-medium">{tpl.desc}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-4 pt-2 space-y-3">
-                     <div className="bg-slate-50 rounded border p-3 text-[11px] font-mono text-slate-700 min-h-[60px]">
-                        {current?.message || tpl.default}
-                     </div>
-                     <Button variant="outline" size="sm" className="w-full text-xs font-semibold h-8 uppercase tracking-widest" onClick={() => {
-                        setEditingNotifTemplate(current || { slug: tpl.slug, name: tpl.name, message: tpl.default, isActive: true } as any)
-                     }}>
-                        <Settings className="h-3 w-3 mr-2" /> Edit Pesan
-                     </Button>
+                    <div className="bg-slate-50 rounded border p-3 text-[11px] font-mono text-slate-700 min-h-[60px]">
+                      {current?.message || tpl.default}
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full text-xs font-semibold h-8 uppercase tracking-widest" onClick={() => {
+                      setEditingNotifTemplate(current || { slug: tpl.slug, name: tpl.name, message: tpl.default, isActive: true } as any)
+                    }}>
+                      <Settings className="h-3 w-3 mr-2" /> Edit Pesan
+                    </Button>
                   </CardContent>
                 </Card>
               )
@@ -790,7 +790,7 @@ export default function AdvertiserDashboard() {
                         {promotorData.map((p) => {
                           const avgBudget = p.adCountForBudget > 0 ? p.totalDailyBudget / p.adCountForBudget : 0
                           const cvr = p.totalLeads > 0 ? (p.totalClients / p.totalLeads) * 100 : 0
-                          
+
                           return (
                             <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50/50 transition-colors group">
                               <td className="p-4">
@@ -802,9 +802,9 @@ export default function AdvertiserDashboard() {
                                 </div>
                               </td>
                               <td className="p-4">
-                                <a 
-                                  href={`https://wa.me/${p.phone.replace(/\D/g, "")}`} 
-                                  target="_blank" 
+                                <a
+                                  href={`https://wa.me/${p.phone.replace(/\D/g, "")}`}
+                                  target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 text-emerald-600 font-medium hover:underline text-xs bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100/50"
                                 >
@@ -848,49 +848,48 @@ export default function AdvertiserDashboard() {
                 {promotorData.map((p) => (
                   <Card key={p.id} className="shadow-none border-slate-100">
                     <CardHeader className="p-4 pb-2">
-                       <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                             <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-xs">
-                                {p.name.charAt(0).toUpperCase()}
-                             </div>
-                             <h3 className="font-bold text-slate-900 text-sm">{p.name}</h3>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-xs">
+                            {p.name.charAt(0).toUpperCase()}
                           </div>
-                          <a href={`https://wa.me/${p.phone.replace(/\D/g, "")}`} className="p-2 bg-emerald-100 text-emerald-700 rounded-full">
-                             <MessageSquare className="h-4 w-4" />
-                          </a>
-                       </div>
+                          <h3 className="font-bold text-slate-900 text-sm">{p.name}</h3>
+                        </div>
+                        <a href={`https://wa.me/${p.phone.replace(/\D/g, "")}`} className="p-2 bg-emerald-100 text-emerald-700 rounded-full">
+                          <MessageSquare className="h-4 w-4" />
+                        </a>
+                      </div>
                     </CardHeader>
                     <CardContent className="p-4 pt-0 space-y-3">
-                       <div className="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-50 mt-2">
-                          <div className="space-y-0.5">
-                             <p className="text-[9px] uppercase font-bold text-slate-400">Total Leads</p>
-                             <p className="text-sm font-bold text-blue-600">{p.totalLeads}</p>
-                          </div>
-                          <div className="space-y-0.5 text-right">
-                             <p className="text-[9px] uppercase font-bold text-slate-400">CVR (%)</p>
-                             <p className={`text-sm font-bold ${
-                               (() => {
-                                 const cvr = p.totalLeads > 0 ? (p.totalClients / p.totalLeads) * 100 : 0
-                                 if (cvr === 0) return "text-slate-400"
-                                 if (cvr <= 5) return "text-red-600"
-                                 if (cvr <= 10) return "text-amber-600"
-                                 return "text-emerald-600"
-                               })()
-                             }`}>
-                               {p.totalLeads > 0 ? ((p.totalClients / p.totalLeads) * 100).toFixed(1) : 0}%
-                             </p>
-                          </div>
-                          <div className="space-y-0.5">
-                             <p className="text-[9px] uppercase font-bold text-slate-400">Avg Budget</p>
-                             <p className="text-[11px] font-bold text-slate-600">
-                               {formatRupiah(Math.round(p.adCountForBudget > 0 ? p.totalDailyBudget / p.adCountForBudget : 0))}
-                             </p>
-                          </div>
-                          <div className="space-y-0.5 text-right">
-                             <p className="text-[9px] uppercase font-bold text-slate-400">Spending</p>
-                             <p className="text-sm font-bold text-emerald-600">{p.totalSpent > 1000000 ? `${(p.totalSpent / 1000000).toFixed(1)}jt` : formatRupiah(p.totalSpent)}</p>
-                          </div>
-                       </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-50 mt-2">
+                        <div className="space-y-0.5">
+                          <p className="text-[9px] uppercase font-bold text-slate-400">Total Leads</p>
+                          <p className="text-sm font-bold text-blue-600">{p.totalLeads}</p>
+                        </div>
+                        <div className="space-y-0.5 text-right">
+                          <p className="text-[9px] uppercase font-bold text-slate-400">CVR (%)</p>
+                          <p className={`text-sm font-bold ${(() => {
+                            const cvr = p.totalLeads > 0 ? (p.totalClients / p.totalLeads) * 100 : 0
+                            if (cvr === 0) return "text-slate-400"
+                            if (cvr <= 5) return "text-red-600"
+                            if (cvr <= 10) return "text-amber-600"
+                            return "text-emerald-600"
+                          })()
+                            }`}>
+                            {p.totalLeads > 0 ? ((p.totalClients / p.totalLeads) * 100).toFixed(1) : 0}%
+                          </p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[9px] uppercase font-bold text-slate-400">Avg Budget</p>
+                          <p className="text-[11px] font-bold text-slate-600">
+                            {formatRupiah(Math.round(p.adCountForBudget > 0 ? p.totalDailyBudget / p.adCountForBudget : 0))}
+                          </p>
+                        </div>
+                        <div className="space-y-0.5 text-right">
+                          <p className="text-[9px] uppercase font-bold text-slate-400">Spending</p>
+                          <p className="text-sm font-bold text-emerald-600">{p.totalSpent > 1000000 ? `${(p.totalSpent / 1000000).toFixed(1)}jt` : formatRupiah(p.totalSpent)}</p>
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -908,46 +907,46 @@ export default function AdvertiserDashboard() {
               <DialogTitle className="font-semibold">Penjadwalan Iklan</DialogTitle>
               <DialogDescription className="text-xs">Tentukan jadwal tayang iklan di Facebook/Instagram.</DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4 py-2">
-               <div className="space-y-2">
-                  <Label className="text-[11px] font-bold uppercase text-muted-foreground">Mode Jadwal</Label>
-                  <Tabs value={scheduleMode} onValueChange={(v) => setScheduleMode(v as "DEFAULT" | "CUSTOM")}>
-                     <TabsList className="grid grid-cols-2">
-                        <TabsTrigger value="DEFAULT">Default (Otomatis)</TabsTrigger>
-                        <TabsTrigger value="CUSTOM">Custom (Manual)</TabsTrigger>
-                     </TabsList>
-                  </Tabs>
-               </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Mode Jadwal</Label>
+                <Tabs value={scheduleMode} onValueChange={(v) => setScheduleMode(v as "DEFAULT" | "CUSTOM")}>
+                  <TabsList className="grid grid-cols-2">
+                    <TabsTrigger value="DEFAULT">Default (Otomatis)</TabsTrigger>
+                    <TabsTrigger value="CUSTOM">Custom (Manual)</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
 
-               <div className="grid grid-cols-1 gap-4">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Mulai Tayang</Label>
-                    <Input 
-                      type="datetime-local" 
-                      value={adStartDate} 
-                      onChange={(e) => setAdStartDate(e.target.value)} 
-                      disabled={scheduleMode === "DEFAULT"}
-                      required 
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Berakhir Tayang</Label>
-                    <Input 
-                      type="datetime-local" 
-                      value={adEndDate} 
-                      onChange={(e) => setAdEndDate(e.target.value)} 
-                      disabled={scheduleMode === "DEFAULT"}
-                      required 
-                    />
-                  </div>
-               </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Mulai Tayang</Label>
+                  <Input
+                    type="datetime-local"
+                    value={adStartDate}
+                    onChange={(e) => setAdStartDate(e.target.value)}
+                    disabled={scheduleMode === "DEFAULT"}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Waktu Berakhir Tayang</Label>
+                  <Input
+                    type="datetime-local"
+                    value={adEndDate}
+                    onChange={(e) => setAdEndDate(e.target.value)}
+                    disabled={scheduleMode === "DEFAULT"}
+                    required
+                  />
+                </div>
+              </div>
 
-               {scheduleMode === "DEFAULT" && selectedAd && (
-                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-[10px] text-blue-700 font-medium">
-                   <p>Sesuai permintaan promotor (Tgl {formatShortDate(selectedAd.startDate)}, Durasi {selectedAd.durationDays} hari), iklan dijadwalkan otomatis tayang 4 hari sebelumnya.</p>
-                 </div>
-               )}
+              {scheduleMode === "DEFAULT" && selectedAd && (
+                <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-[10px] text-blue-700 font-medium">
+                  <p>Sesuai permintaan promotor (Tgl {formatShortDate(selectedAd.startDate)}, Durasi {selectedAd.durationDays} hari), iklan dijadwalkan otomatis tayang 4 hari sebelumnya.</p>
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -966,18 +965,18 @@ export default function AdvertiserDashboard() {
               <DialogDescription className="text-xs">Masukkan budget terpakai dan leads yang masuk.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
-               <div className="space-y-1">
-                 <Label className="font-semibold text-sm">Biaya Iklan (Ads Spent)</Label>
-                 <Input type="number" value={inputAmountSpent} onChange={(e) => setInputAmountSpent(e.target.value)} placeholder="0" required />
-               </div>
-               <div className="space-y-1">
-                 <Label className="font-semibold text-sm">Total Leads/Gasing</Label>
-                 <Input type="number" value={inputTotalLeads} onChange={(e) => setInputTotalLeads(e.target.value)} placeholder="0" required />
-               </div>
-               <div className="space-y-1">
-                 <Label className="font-semibold text-sm">CPR (Cost Per Result)</Label>
-                 <Input type="number" step="0.01" value={inputCPR} onChange={(e) => setInputCPR(e.target.value)} placeholder="0" required />
-               </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Biaya Iklan (Ads Spent)</Label>
+                <Input type="number" value={inputAmountSpent} onChange={(e) => setInputAmountSpent(e.target.value)} placeholder="0" required />
+              </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Total Leads/Gasing</Label>
+                <Input type="number" value={inputTotalLeads} onChange={(e) => setInputTotalLeads(e.target.value)} placeholder="0" required />
+              </div>
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">CPR (Cost Per Result)</Label>
+                <Input type="number" step="0.01" value={inputCPR} onChange={(e) => setInputCPR(e.target.value)} placeholder="0" required />
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" size="sm" onClick={() => setReportDialogOpen(false)}>Batal</Button>
@@ -996,10 +995,10 @@ export default function AdvertiserDashboard() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                 <Label className="text-[11px] font-bold uppercase text-muted-foreground">Kategori</Label>
-                 <Tabs value={templateType} onValueChange={(v) => setTemplateType(v as "VO" | "JJ")}>
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Kategori</Label>
+                <Tabs value={templateType} onValueChange={(v) => setTemplateType(v as "VO" | "JJ")}>
                   <TabsList className="grid grid-cols-2"><TabsTrigger value="VO">Voice Over</TabsTrigger><TabsTrigger value="JJ">Jedag Jedug</TabsTrigger></TabsList>
-                 </Tabs>
+                </Tabs>
               </div>
               <div className="space-y-2">
                 <Label className="text-[11px] font-bold uppercase text-muted-foreground">Nama Template</Label>
@@ -1029,10 +1028,10 @@ export default function AdvertiserDashboard() {
               <DialogDescription className="text-xs">Ubah isi pesan otomatis yang dikirim sistem.</DialogDescription>
             </DialogHeader>
             <div className="py-2 space-y-4">
-               <Textarea value={editingNotifTemplate?.message || ""} onChange={(e) => setEditingNotifTemplate(prev => prev ? { ...prev, message: e.target.value } : null)} className="min-h-[140px] font-mono text-[13px] bg-slate-50 border-slate-200 p-4 leading-relaxed" />
-               <div className="text-[10px] text-muted-foreground bg-amber-50 border border-amber-200 p-3 rounded-lg font-medium">
-                 <span className="font-bold text-amber-800">Variabel WA:</span> {"{promotor}"}, {"{city}"}, {"{jumlah}"}
-               </div>
+              <Textarea value={editingNotifTemplate?.message || ""} onChange={(e) => setEditingNotifTemplate(prev => prev ? { ...prev, message: e.target.value } : null)} className="min-h-[140px] font-mono text-[13px] bg-slate-50 border-slate-200 p-4 leading-relaxed" />
+              <div className="text-[10px] text-muted-foreground bg-amber-50 border border-amber-200 p-3 rounded-lg font-medium">
+                <span className="font-bold text-amber-800">Variabel WA:</span> {"{promotor}"}, {"{city}"}, {"{jumlah}"}
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" size="sm" onClick={() => setEditingNotifTemplate(null)}>Batal</Button>
