@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -179,6 +179,21 @@ const isAtOrAfter = (status: string, target: string): boolean => {
   return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
 }
 
+// ─── Sub-Components ──────────────────────────────────────────────────────────
+
+const RankCard = ({ rank, name, value, label, color }: { rank: number; name: string; value: string | number; label: string; color: string }) => (
+  <div className={`flex items-center gap-4 p-4 rounded-xl border bg-white shadow-none hover:shadow-sm transition-all ${rank === 1 ? "border-amber-300 bg-amber-50/50" : rank === 2 ? "border-slate-300 bg-slate-50/50" : rank === 3 ? "border-orange-200 bg-orange-50/30" : "border-slate-100"}`}>
+    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${rank === 1 ? "bg-amber-400 text-white" : rank === 2 ? "bg-slate-400 text-white" : rank === 3 ? "bg-orange-400 text-white" : "bg-slate-100 text-slate-500"
+      }`}>
+      {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`}
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className="font-bold text-slate-900 truncate">{name}</p>
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{label}</p>
+    </div>
+    <div className={`text-right font-black text-lg ${color}`}>{value}</div>
+  </div>
+)
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -186,6 +201,7 @@ export default function PromotorDashboard() {
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [globalAds, setGlobalAds] = useState<AdRequest[]>([])
+  const [allGlobalAds, setAllGlobalAds] = useState<AdRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [globalSearch, setGlobalSearch] = useState("")
@@ -227,6 +243,37 @@ export default function PromotorDashboard() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Stats Memoization ──────────────────────────────────────────────────────
+
+  const topPromotorStats = useMemo(() => {
+    const stats: Record<string, { id: string; name: string; totalClients: number; totalSpent: number; totalAds: number }> = {}
+
+    // For clients & spending: use globalAds (with reports)
+    globalAds.forEach((ad) => {
+      const id = ad.promotor.id
+      if (!stats[id]) {
+        stats[id] = { id, name: ad.promotor.name, totalClients: 0, totalSpent: 0, totalAds: 0 }
+      }
+      if (ad.promotorResult?.status === "VALID") {
+        stats[id].totalClients += ad.promotorResult.totalClients
+      }
+      if (ad.adReport) {
+        stats[id].totalSpent += ad.adReport.amountSpent || 0
+      }
+    })
+
+    // For ad count: use allGlobalAds (all confirmed, excl. MENUNGGU_PEMBAYARAN)
+    allGlobalAds.forEach((ad) => {
+      const id = ad.promotor.id
+      if (!stats[id]) {
+        stats[id] = { id, name: ad.promotor.name, totalClients: 0, totalSpent: 0, totalAds: 0 }
+      }
+      stats[id].totalAds++
+    })
+
+    return Object.values(stats)
+  }, [globalAds, allGlobalAds])
+
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
   const fetchAdRequests = useCallback(async () => {
@@ -252,6 +299,9 @@ export default function PromotorDashboard() {
       // Only show ads with reports for future decision making
       const adsWithReports = data.filter(ad => ad.adReport !== null)
       setGlobalAds(adsWithReports)
+      // All confirmed ads (excluding unpaid) for lifetime count
+      const confirmedAds = data.filter(ad => ad.status !== "MENUNGGU_PEMBAYARAN")
+      setAllGlobalAds(confirmedAds)
     } catch {
       console.error("Failed to fetch global ads")
     }
@@ -354,8 +404,8 @@ export default function PromotorDashboard() {
               {/* Scheduled Info Section */}
               {ad.adStartDate && (
                 <div className={`rounded-lg p-3 border text-sm space-y-2 ${ad.status === "IKLAN_DIJADWALKAN"
-                    ? "bg-blue-50 border-blue-100 text-blue-800"
-                    : "bg-muted/30 border-muted"
+                  ? "bg-blue-50 border-blue-100 text-blue-800"
+                  : "bg-muted/30 border-muted"
                   }`}>
                   <div className="flex items-center gap-2 font-medium">
                     <CalendarCheck className="h-4 w-4" />
@@ -995,10 +1045,11 @@ export default function PromotorDashboard() {
 
       {/* ── Main Tabs ───────────────────────────────────────────────────── */}
       <Tabs defaultValue="pengajuan" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="pengajuan">Pengajuan Iklan</TabsTrigger>
           <TabsTrigger value="riwayat">Riwayat Iklan</TabsTrigger>
           <TabsTrigger value="data-iklan">Data Iklan</TabsTrigger>
+          <TabsTrigger value="top-promotor">🏆 Top Promotor</TabsTrigger>
         </TabsList>
 
         {/* ── Pengajuan Iklan Tab ───────────────────────────────────────── */}
@@ -1154,8 +1205,8 @@ export default function PromotorDashboard() {
 
           {/* Ad request sub-tabs */}
           <Tabs defaultValue="PAY" className="w-full space-y-6">
-            <TabsList className="bg-slate-100/50 p-1 border h-auto flex-wrap gap-1">
-              <TabsTrigger value="PAY" className="gap-2 text-[11px] font-bold">
+            <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+              <TabsTrigger value="PAY" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Pembayaran
                 {adRequests.filter(r => r.status === "MENUNGGU_PEMBAYARAN").length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-amber-100 text-amber-700 border-amber-200">
@@ -1163,7 +1214,7 @@ export default function PromotorDashboard() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="CONTENT" className="gap-2 text-[11px] font-bold">
+              <TabsTrigger value="CONTENT" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Konten
                 {adRequests.filter(r => ["MENUNGGU_KONTEN", "DIPROSES"].includes(r.status)).length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
@@ -1171,7 +1222,7 @@ export default function PromotorDashboard() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="PROCESS" className="gap-2 text-[11px] font-bold">
+              <TabsTrigger value="PROCESS" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Diproses
                 {adRequests.filter(r => ["KONTEN_SELESAI", "IKLAN_DIJADWALKAN"].includes(r.status)).length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
@@ -1179,7 +1230,7 @@ export default function PromotorDashboard() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="ACTIVE" className="gap-2 text-[11px] font-bold">
+              <TabsTrigger value="ACTIVE" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Iklan Aktif
                 {adRequests.filter(r => r.status === "IKLAN_BERJALAN").length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border-purple-200">
@@ -1187,7 +1238,7 @@ export default function PromotorDashboard() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="DONE" className="gap-2 text-[11px] font-bold">
+              <TabsTrigger value="DONE" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Selesai
               </TabsTrigger>
             </TabsList>
@@ -1443,6 +1494,50 @@ export default function PromotorDashboard() {
               );
             })()}
           </div>
+        </TabsContent>
+
+        {/* ── Top Promotor Tab ─────────────────────────────────────────── */}
+        <TabsContent value="top-promotor" className="space-y-4 mt-4">
+          <Tabs defaultValue="klien" className="w-full">
+            <TabsList className="bg-slate-50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 mb-2 rounded-lg">
+              <TabsTrigger value="klien" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">👥 Klien</TabsTrigger>
+              <TabsTrigger value="spending" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">💰 Spending</TabsTrigger>
+              <TabsTrigger value="iklan" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">📢 Iklan</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="klien" className="space-y-2 mt-3">
+              <p className="text-xs text-muted-foreground font-medium mb-3">Peringkat berdasarkan total klien</p>
+              {topPromotorStats.length === 0 ? (
+                <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
+              ) : (
+                [...topPromotorStats].sort((a, b) => b.totalClients - a.totalClients).map((p, i) => (
+                  <RankCard key={p.id} rank={i + 1} name={p.name} value={`${p.totalClients} Orang`} label="Total Klien" color="text-purple-600" />
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="spending" className="space-y-2 mt-3">
+              <p className="text-xs text-muted-foreground font-medium mb-3">Peringkat berdasarkan total anggaran iklan yang sudah terpakai</p>
+              {topPromotorStats.length === 0 ? (
+                <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
+              ) : (
+                [...topPromotorStats].sort((a, b) => b.totalSpent - a.totalSpent).map((p, i) => (
+                  <RankCard key={p.id} rank={i + 1} name={p.name} value={formatRupiah(p.totalSpent)} label="Total Ads Spent" color="text-emerald-600" />
+                ))
+              )}
+            </TabsContent>
+
+            <TabsContent value="iklan" className="space-y-2 mt-3">
+              <p className="text-xs text-muted-foreground font-medium mb-3">Peringkat berdasarkan jumlah total pengajuan iklan</p>
+              {topPromotorStats.length === 0 ? (
+                <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
+              ) : (
+                [...topPromotorStats].sort((a, b) => b.totalAds - a.totalAds).map((p, i) => (
+                  <RankCard key={p.id} rank={i + 1} name={p.name} value={`${p.totalAds} Iklan`} label="Total Pengajuan" color="text-blue-600" />
+                ))
+              )}
+            </TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
       {/* ── Edit Dialog ── */}

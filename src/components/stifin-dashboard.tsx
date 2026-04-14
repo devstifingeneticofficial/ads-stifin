@@ -433,7 +433,7 @@ export default function StifinDashboard() {
 
       {/* ── Main Tabs ─────────────────────────────────────────────────────── */}
       <Tabs defaultValue="semua" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="semua">Semua Pengajuan</TabsTrigger>
           <TabsTrigger value="promotor">Laporan Promotor</TabsTrigger>
           <TabsTrigger value="advertiser">Laporan Advertiser</TabsTrigger>

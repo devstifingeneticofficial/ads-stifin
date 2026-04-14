@@ -486,7 +486,7 @@ export default function AdvertiserDashboard() {
       </div>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="bg-slate-100/50 p-1 border">
+        <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="overview" className="gap-2"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
@@ -503,15 +503,15 @@ export default function AdvertiserDashboard() {
             </div>
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
-              <TabsList className="bg-slate-50 p-0.5 border h-auto flex-wrap justify-start gap-1">
-                <TabsTrigger value="all" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Semua</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Menunggu Pembayaran</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_KONTEN" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Menunggu Konten</TabsTrigger>
-                <TabsTrigger value="KONTEN_SELESAI" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Konten Selesai</TabsTrigger>
-                <TabsTrigger value="IKLAN_DIJADWALKAN" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Iklan Dijadwalkan</TabsTrigger>
-                <TabsTrigger value="IKLAN_BERJALAN" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Iklan Berjalan</TabsTrigger>
-                <TabsTrigger value="SELESAI" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Selesai</TabsTrigger>
-                <TabsTrigger value="FINAL" className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-sm">Iklan Final</TabsTrigger>
+              <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+                <TabsTrigger value="all" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Semua</TabsTrigger>
+                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Pembayaran</TabsTrigger>
+                <TabsTrigger value="MENUNGGU_KONTEN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Konten</TabsTrigger>
+                <TabsTrigger value="KONTEN_SELESAI" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Konten Selesai</TabsTrigger>
+                <TabsTrigger value="IKLAN_DIJADWALKAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Dijadwalkan</TabsTrigger>
+                <TabsTrigger value="IKLAN_BERJALAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Berjalan</TabsTrigger>
+                <TabsTrigger value="SELESAI" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Selesai</TabsTrigger>
+                <TabsTrigger value="FINAL" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Final</TabsTrigger>
               </TabsList>
             </Tabs>
 
