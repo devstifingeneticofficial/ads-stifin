@@ -49,6 +49,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -140,6 +141,13 @@ const formatTestDate = (start: string, end?: string | null) => {
   return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
 }
 
+const getCvrColor = (cvr: number) => {
+  if (cvr === 0) return "bg-slate-100 text-slate-600 border-slate-200"
+  if (cvr <= 5) return "bg-red-100 text-red-700 border-red-200"
+  if (cvr <= 10) return "bg-amber-100 text-amber-700 border-amber-200"
+  return "bg-emerald-100 text-emerald-700 border-emerald-200"
+}
+
 const formatToDateTimeLocal = (date: Date) => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
@@ -210,7 +218,10 @@ export default function AdvertiserDashboard() {
       phone: string, 
       totalConfirmed: number, 
       totalClients: number, 
-      totalSpent: number 
+      totalSpent: number,
+      totalLeads: number,
+      totalDailyBudget: number,
+      adCountForBudget: number
     }> = {}
 
     adRequests.forEach(ad => {
@@ -222,12 +233,17 @@ export default function AdvertiserDashboard() {
           phone: p.phone || "-",
           totalConfirmed: 0,
           totalClients: 0,
-          totalSpent: 0
+          totalSpent: 0,
+          totalLeads: 0,
+          totalDailyBudget: 0,
+          adCountForBudget: 0
         }
       }
 
       if (ad.status !== "MENUNGGU_PEMBAYARAN") {
         stats[p.id].totalConfirmed++
+        stats[p.id].totalDailyBudget += ad.dailyBudget
+        stats[p.id].adCountForBudget++
       }
 
       if (ad.promotorResult && ad.promotorResult.status === "VALID") {
@@ -236,6 +252,7 @@ export default function AdvertiserDashboard() {
 
       if (ad.adReport) {
         stats[p.id].totalSpent += (ad.adReport.amountSpent || 0)
+        stats[p.id].totalLeads += (ad.adReport.totalLeads || 0)
       }
     })
 
@@ -740,67 +757,146 @@ export default function AdvertiserDashboard() {
         </TabsContent>
 
         <TabsContent value="promotors" className="space-y-4">
-          <div className="flex flex-col gap-1 mb-2">
+          <div className="flex flex-col gap-1 mb-1">
             <h2 className="text-lg font-semibold">Performa Promotor</h2>
             <p className="text-xs text-muted-foreground">Monitoring performa pengajuan dari setiap promotor</p>
           </div>
 
-          <div className="grid gap-4">
-            {promotorData.length === 0 ? (
-              <Card className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground italic border-dashed border-2">
-                <Users className="h-10 w-10 mb-3 opacity-20" />
-                <p>Belum ada promotor yang terdaftar dalam sistem.</p>
+          {promotorData.length === 0 ? (
+            <Card className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground italic border-dashed border-2">
+              <Users className="h-10 w-10 mb-3 opacity-20" />
+              <p>Belum ada promotor yang terdaftar dalam sistem.</p>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {/* Desktop Table */}
+              <Card className="hidden md:block shadow-none border-slate-100 overflow-hidden">
+                <CardContent className="p-0">
+                  <ScrollArea className="max-h-[600px]">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-slate-50/50 sticky top-0 z-10">
+                          <th className="text-left p-4 font-semibold text-slate-900">Promotor</th>
+                          <th className="text-left p-4 font-semibold text-slate-900">WhatsApp</th>
+                          <th className="text-center p-4 font-semibold text-slate-900">Ads</th>
+                          <th className="text-center p-4 font-semibold text-slate-900">Avg Budget</th>
+                          <th className="text-center p-4 font-semibold text-slate-900">Leads</th>
+                          <th className="text-center p-4 font-semibold text-slate-900">Clients</th>
+                          <th className="text-center p-4 font-semibold text-slate-900">CVR</th>
+                          <th className="text-right p-4 font-semibold text-slate-900">Spending</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {promotorData.map((p) => {
+                          const avgBudget = p.adCountForBudget > 0 ? p.totalDailyBudget / p.adCountForBudget : 0
+                          const cvr = p.totalLeads > 0 ? (p.totalClients / p.totalLeads) * 100 : 0
+                          
+                          return (
+                            <tr key={p.id} className="border-b last:border-0 hover:bg-slate-50/50 transition-colors group">
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-xs shrink-0 group-hover:scale-110 transition-transform">
+                                    {p.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className="font-semibold text-slate-900">{p.name}</span>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <a 
+                                  href={`https://wa.me/${p.phone.replace(/\D/g, "")}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-emerald-600 font-medium hover:underline text-xs bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100/50"
+                                >
+                                  <MessageSquare className="h-3 w-3" />
+                                  {p.phone}
+                                </a>
+                              </td>
+                              <td className="p-4 text-center">
+                                <Badge variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+                                  {p.totalConfirmed}
+                                </Badge>
+                              </td>
+                              <td className="p-4 text-center font-medium text-slate-600 text-xs text-nowrap">
+                                {formatRupiah(Math.round(avgBudget))}
+                              </td>
+                              <td className="p-4 text-center font-bold text-blue-600">
+                                {p.totalLeads.toLocaleString("id-ID")}
+                              </td>
+                              <td className="p-4 text-center font-bold text-slate-900">
+                                {p.totalClients.toLocaleString("id-ID")}
+                              </td>
+                              <td className="p-4 text-center">
+                                <Badge className={getCvrColor(cvr)}>
+                                  {cvr.toFixed(1)}%
+                                </Badge>
+                              </td>
+                              <td className="p-4 text-right">
+                                <span className="font-bold text-emerald-600">{formatRupiah(p.totalSpent)}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                </CardContent>
               </Card>
-            ) : (
-              promotorData.map((p) => (
-                <Card key={p.id} className="shadow-sm hover:border-slate-300 transition-all border-slate-100 overflow-hidden">
-                  <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                    {/* Basic Info */}
-                    <div className="p-5 flex-1 bg-slate-50/30">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-sm">
-                          {p.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900">{p.name}</h3>
-                          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full w-fit mt-0.5 border border-emerald-100">
-                            <MessageSquare className="h-3 w-3" />
-                            {p.phone}
+
+              {/* Mobile Cards */}
+              <div className="md:hidden space-y-3">
+                {promotorData.map((p) => (
+                  <Card key={p.id} className="shadow-none border-slate-100">
+                    <CardHeader className="p-4 pb-2">
+                       <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                             <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-xs">
+                                {p.name.charAt(0).toUpperCase()}
+                             </div>
+                             <h3 className="font-bold text-slate-900 text-sm">{p.name}</h3>
                           </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Stats Grid */}
-                    <div className="p-5 flex-[2] grid grid-cols-3 gap-4 items-center">
-                      <div className="text-center space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Iklan Konfirmasi</p>
-                        <div className="flex items-baseline justify-center gap-1">
-                          <span className="text-xl font-bold text-slate-900">{p.totalConfirmed}</span>
-                          <span className="text-[10px] text-slate-500 font-medium italic">Pengajuan</span>
-                        </div>
-                      </div>
-
-                      <div className="text-center space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Klien</p>
-                        <div className="flex items-baseline justify-center gap-1">
-                          <span className="text-xl font-bold text-slate-900">{p.totalClients}</span>
-                          <span className="text-[10px] text-slate-500 font-medium italic">Orang</span>
-                        </div>
-                      </div>
-
-                      <div className="text-center space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Ads Spent</p>
-                        <div className="text-lg font-bold text-emerald-600">
-                          {formatRupiah(p.totalSpent)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              ))
-            )}
-          </div>
+                          <a href={`https://wa.me/${p.phone.replace(/\D/g, "")}`} className="p-2 bg-emerald-100 text-emerald-700 rounded-full">
+                             <MessageSquare className="h-4 w-4" />
+                          </a>
+                       </div>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-3">
+                       <div className="grid grid-cols-2 gap-x-4 gap-y-3 py-3 border-y border-slate-50 mt-2">
+                          <div className="space-y-0.5">
+                             <p className="text-[9px] uppercase font-bold text-slate-400">Total Leads</p>
+                             <p className="text-sm font-bold text-blue-600">{p.totalLeads}</p>
+                          </div>
+                          <div className="space-y-0.5 text-right">
+                             <p className="text-[9px] uppercase font-bold text-slate-400">CVR (%)</p>
+                             <p className={`text-sm font-bold ${
+                               (() => {
+                                 const cvr = p.totalLeads > 0 ? (p.totalClients / p.totalLeads) * 100 : 0
+                                 if (cvr === 0) return "text-slate-400"
+                                 if (cvr <= 5) return "text-red-600"
+                                 if (cvr <= 10) return "text-amber-600"
+                                 return "text-emerald-600"
+                               })()
+                             }`}>
+                               {p.totalLeads > 0 ? ((p.totalClients / p.totalLeads) * 100).toFixed(1) : 0}%
+                             </p>
+                          </div>
+                          <div className="space-y-0.5">
+                             <p className="text-[9px] uppercase font-bold text-slate-400">Avg Budget</p>
+                             <p className="text-[11px] font-bold text-slate-600">
+                               {formatRupiah(Math.round(p.adCountForBudget > 0 ? p.totalDailyBudget / p.adCountForBudget : 0))}
+                             </p>
+                          </div>
+                          <div className="space-y-0.5 text-right">
+                             <p className="text-[9px] uppercase font-bold text-slate-400">Spending</p>
+                             <p className="text-sm font-bold text-emerald-600">{p.totalSpent > 1000000 ? `${(p.totalSpent / 1000000).toFixed(1)}jt` : formatRupiah(p.totalSpent)}</p>
+                          </div>
+                       </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 

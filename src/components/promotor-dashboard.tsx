@@ -45,6 +45,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { compressImage } from "@/lib/utils"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,10 @@ const STATUS_ORDER = [
 const isAtOrAfter = (status: string, target: string): boolean => {
   return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
 }
+
+// Normalize city name to Title Case (e.g. "bandung" → "Bandung", "BANDUNG BARAT" → "Bandung Barat")
+const toTitleCase = (str: string): string =>
+  str.trim().replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
 
 // ─── Sub-Components ──────────────────────────────────────────────────────────
 
@@ -757,7 +762,7 @@ export default function PromotorDashboard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          city: formCity,
+          city: toTitleCase(formCity),
           startDate: formStartDate,
           testEndDate: testMode === "2DAYS" ? formEndDate : null,
           durationDays,
@@ -796,9 +801,12 @@ export default function PromotorDashboard() {
 
     setUploading(true)
     try {
+      // 0. Compress file before upload
+      const compressedFile = await compressImage(uploadFile)
+
       // 1. Upload file
       const formData = new FormData()
-      formData.append("file", uploadFile)
+      formData.append("file", compressedFile)
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -904,7 +912,7 @@ export default function PromotorDashboard() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          city: editFormCity,
+          city: toTitleCase(editFormCity),
           startDate: editFormStartDate,
           durationDays: duration,
           dailyBudget,
@@ -1048,7 +1056,7 @@ export default function PromotorDashboard() {
         <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="pengajuan">Pengajuan Iklan</TabsTrigger>
           <TabsTrigger value="riwayat">Riwayat Iklan</TabsTrigger>
-          <TabsTrigger value="data-iklan">Data Iklan</TabsTrigger>
+          <TabsTrigger value="data-iklan">Data Iklan Global</TabsTrigger>
           <TabsTrigger value="top-promotor">🏆 Top Promotor</TabsTrigger>
         </TabsList>
 
