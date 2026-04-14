@@ -39,6 +39,7 @@ model AdRequest {
   briefJJ         String?
   paymentProofUrl String?
   contentUrl      String?
+  promotorNote    String?
   adStartDate     DateTime?
   adEndDate       DateTime?
   promotorId      String

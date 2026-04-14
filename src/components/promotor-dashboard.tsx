@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -100,11 +101,11 @@ const formatDate = (dateStr: string): string => {
 const formatTestDate = (start: string, end?: string | null) => {
   const s = new Date(start)
   const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
-  
+
   if (!end) {
     return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
   }
-  
+
   const e = new Date(end)
   if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
     return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
@@ -174,9 +175,9 @@ const STATUS_ORDER = [
   "SELESAI",
 ]
 
-  const isAtOrAfter = (status: string, target: string): boolean => {
-    return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
-  }
+const isAtOrAfter = (status: string, target: string): boolean => {
+  return STATUS_ORDER.indexOf(status) >= STATUS_ORDER.indexOf(target)
+}
 
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -202,6 +203,7 @@ export default function PromotorDashboard() {
   const [formEndDate, setFormEndDate] = useState("")
   const [formDuration, setFormDuration] = useState("")
   const [formDailyBudget, setFormDailyBudget] = useState("")
+  const [formNote, setFormNote] = useState("")
 
   // Upload state
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -351,11 +353,10 @@ export default function PromotorDashboard() {
 
               {/* Scheduled Info Section */}
               {ad.adStartDate && (
-                <div className={`rounded-lg p-3 border text-sm space-y-2 ${
-                  ad.status === "IKLAN_DIJADWALKAN" 
+                <div className={`rounded-lg p-3 border text-sm space-y-2 ${ad.status === "IKLAN_DIJADWALKAN"
                     ? "bg-blue-50 border-blue-100 text-blue-800"
                     : "bg-muted/30 border-muted"
-                }`}>
+                  }`}>
                   <div className="flex items-center gap-2 font-medium">
                     <CalendarCheck className="h-4 w-4" />
                     Jadwal Tayang Iklan
@@ -455,16 +456,16 @@ export default function PromotorDashboard() {
                       </DialogContent>
                     </Dialog>
 
-                    <Button 
-                      variant="secondary" 
+                    <Button
+                      variant="secondary"
                       size="sm"
                       onClick={() => handleOpenEdit(ad)}
                     >
                       Edit
                     </Button>
 
-                    <Button 
-                      variant="destructive" 
+                    <Button
+                      variant="destructive"
                       size="sm"
                       onClick={() => handleDelete(ad.id)}
                       disabled={isDeleting === ad.id}
@@ -479,7 +480,7 @@ export default function PromotorDashboard() {
                   <Button variant="outline" size="sm" asChild className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold hover:text-emerald-800">
                     <a href={waLink || "#"} target="_blank" rel="noopener noreferrer">
                       <Download className="h-4 w-4 mr-2" />
-                      LIHAT KONTEN (WA)
+                      DOWNLOAD KONTEN
                     </a>
                   </Button>
                 )}
@@ -516,7 +517,7 @@ export default function PromotorDashboard() {
                       <DialogHeader>
                         <DialogTitle>{ad.promotorResult?.status === "VALID" ? "Ajukan Revisi Laporan" : "Input Laporan Klien"}</DialogTitle>
                         <DialogDescription>
-                          {ad.promotorResult?.status === "VALID" 
+                          {ad.promotorResult?.status === "VALID"
                             ? "Anda sedang mengajukan revisi untuk laporan yang sudah divalidasi."
                             : `Laporkan jumlah klien yang didapat dari iklan di ${ad.city}`}
                         </DialogDescription>
@@ -711,6 +712,7 @@ export default function PromotorDashboard() {
           testEndDate: testMode === "2DAYS" ? formEndDate : null,
           durationDays,
           dailyBudget,
+          promotorNote: formNote || null,
         }),
       })
 
@@ -725,6 +727,7 @@ export default function PromotorDashboard() {
       setFormStartDate("")
       setFormDuration("")
       setFormDailyBudget("")
+      setFormNote("")
       fetchAdRequests()
     } catch (err: any) {
       toast.error(err.message || "Gagal membuat pengajuan")
@@ -1034,38 +1037,38 @@ export default function PromotorDashboard() {
                     />
                   </div>
 
-                   <div className="space-y-2">
-                     <Label className="text-[11px] font-bold uppercase text-muted-foreground">Opsi Durasi Tes</Label>
-                     <Tabs value={testMode} onValueChange={(v) => setTestMode(v as "1DAY" | "2DAYS")}>
-                        <TabsList className="grid grid-cols-2 h-8">
-                           <TabsTrigger value="1DAY" className="text-xs">1 Hari</TabsTrigger>
-                           <TabsTrigger value="2DAYS" className="text-xs">2 Hari</TabsTrigger>
-                        </TabsList>
-                     </Tabs>
-                   </div>
+                  <div className="space-y-2">
+                    <Label className="text-[11px] font-bold uppercase text-muted-foreground">Opsi Durasi Tes</Label>
+                    <Tabs value={testMode} onValueChange={(v) => setTestMode(v as "1DAY" | "2DAYS")}>
+                      <TabsList className="grid grid-cols-2 h-8">
+                        <TabsTrigger value="1DAY" className="text-xs">1 Hari</TabsTrigger>
+                        <TabsTrigger value="2DAYS" className="text-xs">2 Hari</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </div>
 
-                   <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="startDate" className="text-[11px] font-semibold">{testMode === "1DAY" ? "Tanggal Tes STIFIn" : "Tes Mulai"}</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={formStartDate}
+                        onChange={(e) => setFormStartDate(e.target.value)}
+                      />
+                    </div>
+                    {testMode === "2DAYS" && (
                       <div className="space-y-2">
-                        <Label htmlFor="startDate" className="text-[11px] font-semibold">{testMode === "1DAY" ? "Tanggal Tes STIFIn" : "Tes Mulai"}</Label>
+                        <Label htmlFor="endDate" className="text-[11px] font-semibold">Tes Selesai</Label>
                         <Input
-                          id="startDate"
+                          id="endDate"
                           type="date"
-                          value={formStartDate}
-                          onChange={(e) => setFormStartDate(e.target.value)}
+                          value={formEndDate}
+                          onChange={(e) => setFormEndDate(e.target.value)}
                         />
                       </div>
-                      {testMode === "2DAYS" && (
-                         <div className="space-y-2">
-                           <Label htmlFor="endDate" className="text-[11px] font-semibold">Tes Selesai</Label>
-                           <Input
-                             id="endDate"
-                             type="date"
-                             value={formEndDate}
-                             onChange={(e) => setFormEndDate(e.target.value)}
-                           />
-                         </div>
-                      )}
-                   </div>
+                    )}
+                  </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="duration">Durasi Iklan (hari)</Label>
@@ -1088,6 +1091,17 @@ export default function PromotorDashboard() {
                       min={1}
                       value={formDailyBudget}
                       onChange={(e) => setFormDailyBudget(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="note">Catatan untuk Advertiser <span className="text-muted-foreground font-normal">(Opsional)</span></Label>
+                    <Textarea
+                      id="note"
+                      placeholder="Contoh: mohon tambahkan informasi lokasi spesifik"
+                      value={formNote}
+                      onChange={(e) => setFormNote(e.target.value)}
+                      className="min-h-[72px] text-sm resize-none"
                     />
                   </div>
 
@@ -1179,19 +1193,19 @@ export default function PromotorDashboard() {
             </TabsList>
 
             <TabsContent value="PAY" className="mt-0">
-               {renderAdCards("PAY")}
+              {renderAdCards("PAY")}
             </TabsContent>
             <TabsContent value="CONTENT" className="mt-0">
-               {renderAdCards("CONTENT")}
+              {renderAdCards("CONTENT")}
             </TabsContent>
             <TabsContent value="PROCESS" className="mt-0">
-               {renderAdCards("PROCESS")}
+              {renderAdCards("PROCESS")}
             </TabsContent>
             <TabsContent value="ACTIVE" className="mt-0">
-               {renderAdCards("ACTIVE")}
+              {renderAdCards("ACTIVE")}
             </TabsContent>
             <TabsContent value="DONE" className="mt-0">
-               {renderAdCards("DONE")}
+              {renderAdCards("DONE")}
             </TabsContent>
           </Tabs>
         </TabsContent>
@@ -1325,7 +1339,7 @@ export default function PromotorDashboard() {
             </div>
 
             {(() => {
-              const filtered = globalAds.filter(ad => 
+              const filtered = globalAds.filter(ad =>
                 ad.city.toLowerCase().includes(globalSearch.toLowerCase()) ||
                 ad.promotor.name.toLowerCase().includes(globalSearch.toLowerCase())
               );

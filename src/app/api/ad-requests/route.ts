@@ -59,7 +59,7 @@ export async function GET(req: Request) {
     const adRequests = await db.adRequest.findMany({
       where,
       include: {
-        promotor: { select: { id: true, name: true, email: true, city: true } },
+        promotor: { select: { id: true, name: true, email: true, city: true, phone: true } },
         adReport: true,
         promotorResult: true,
       },
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Hanya Promotor yang dapat membuat pengajuan" }, { status: 403 })
     }
 
-    const { city, startDate, testEndDate, durationDays, dailyBudget } = await req.json()
+    const { city, startDate, testEndDate, durationDays, dailyBudget, promotorNote } = await req.json()
 
     if (!city || !startDate || !durationDays || !dailyBudget) {
       return NextResponse.json({ error: "Semua field wajib diisi" }, { status: 400 })
@@ -111,8 +111,11 @@ export async function POST(req: Request) {
     }
 
     // Fetch dynamic templates from master database
-    const masterVO = await db.briefTemplate.findMany({ where: { type: "VO" } })
-    const masterJJ = await db.briefTemplate.findMany({ where: { type: "JJ" } })
+    const masterVO = await db.briefTemplate.findMany({ where: { type: "VO" }, orderBy: { createdAt: "asc" } })
+    const masterJJ = await db.briefTemplate.findMany({ where: { type: "JJ" }, orderBy: { createdAt: "asc" } })
+
+    // Count previous requests for rotation index
+    const promotorCount = await db.adRequest.count({ where: { promotorId: session.id } })
 
     let finalVO = ""
     let finalJJ = ""
@@ -125,7 +128,7 @@ export async function POST(req: Request) {
     }
 
     if (masterVO.length > 0) {
-      const selectedVO = masterVO[Math.floor(Math.random() * masterVO.length)]
+      const selectedVO = masterVO[promotorCount % masterVO.length]
       finalVO = replacePlaceholders(selectedVO.content)
     } else {
       // Fallback
@@ -133,7 +136,7 @@ export async function POST(req: Request) {
     }
 
     if (masterJJ.length > 0) {
-      const selectedJJ = masterJJ[Math.floor(Math.random() * masterJJ.length)]
+      const selectedJJ = masterJJ[promotorCount % masterJJ.length]
       finalJJ = replacePlaceholders(selectedJJ.content)
     } else {
       // Fallback
@@ -157,6 +160,7 @@ export async function POST(req: Request) {
         briefContent,
         briefVO: finalVO,
         briefJJ: finalJJ,
+        promotorNote,
         promotorId: session.id,
       },
       include: {

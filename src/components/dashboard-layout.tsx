@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   User as UserIcon,
+  Users,
 } from "lucide-react"
 import {
   Dialog,

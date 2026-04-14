@@ -22,6 +22,7 @@ import {
   CheckCircle,
   AlertCircle,
   Megaphone,
+  Users,
 } from "lucide-react"
 
 import {
@@ -96,6 +97,8 @@ interface AdRequest {
   adStartDate: string | null
   adEndDate: string | null
   adReport: AdReport | null
+  promotorResult: PromotorResult | null
+  promotorNote: string | null
   createdAt: string
 }
 
@@ -198,6 +201,48 @@ export default function AdvertiserDashboard() {
   const [inputAmountSpent, setInputAmountSpent] = useState("")
   const [inputTotalLeads, setInputTotalLeads] = useState("")
   const [inputCPR, setInputCPR] = useState("")
+
+  // ── Promotor aggregation ───────────────────────────────────────────────────
+  const promotorStats = (adRequests: AdRequest[]) => {
+    const stats: Record<string, { 
+      id: string, 
+      name: string, 
+      phone: string, 
+      totalConfirmed: number, 
+      totalClients: number, 
+      totalSpent: number 
+    }> = {}
+
+    adRequests.forEach(ad => {
+      const p = ad.promotor
+      if (!stats[p.id]) {
+        stats[p.id] = {
+          id: p.id,
+          name: p.name,
+          phone: p.phone || "-",
+          totalConfirmed: 0,
+          totalClients: 0,
+          totalSpent: 0
+        }
+      }
+
+      if (ad.status !== "MENUNGGU_PEMBAYARAN") {
+        stats[p.id].totalConfirmed++
+      }
+
+      if (ad.promotorResult && ad.promotorResult.status === "VALID") {
+        stats[p.id].totalClients += ad.promotorResult.totalClients
+      }
+
+      if (ad.adReport) {
+        stats[p.id].totalSpent += (ad.adReport.amountSpent || 0)
+      }
+    })
+
+    return Object.values(stats)
+  }
+
+  const promotorData = promotorStats(adRequests)
 
   const fetchAdRequests = useCallback(async () => {
     try {
@@ -341,6 +386,20 @@ export default function AdvertiserDashboard() {
     finally { setIsSubmitting(false) }
   }
 
+  const handleVerifyPayment = async (adId: string) => {
+    if (!confirm("Tandai pengajuan ini sebagai 'Sudah Terbayar'?")) return
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`/api/ad-requests/${adId}/verify-payment`, {
+        method: "POST",
+      })
+      if (!res.ok) throw new Error("Gagal")
+      toast.success("Pembayaran berhasil dikonfirmasi!")
+      fetchAdRequests()
+    } catch { toast.error("Gagal mengonfirmasi pembayaran") }
+    finally { setIsSubmitting(false) }
+  }
+
   const handleUpdateNotifTemplate = async (e: React.FormEvent | null, slug: string, isActive?: boolean, message?: string) => {
     if (e) e.preventDefault()
     setIsSubmitting(true)
@@ -431,6 +490,7 @@ export default function AdvertiserDashboard() {
           <TabsTrigger value="overview" className="gap-2"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
+          <TabsTrigger value="promotors" className="gap-2"><Users className="h-4 w-4" /> Promotor</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -518,6 +578,13 @@ export default function AdvertiserDashboard() {
                           </div>
                        )}
 
+                       {ad.promotorNote && (
+                          <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-1">
+                             <p className="text-[9px] uppercase font-bold text-amber-600 tracking-wider mb-0.5">Catatan Promotor</p>
+                             <p className="text-xs text-amber-900 font-medium">{ad.promotorNote}</p>
+                          </div>
+                       )}
+
                        <div className="flex items-center justify-between pt-1">
                           <div className="flex gap-2">
                              <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
@@ -530,6 +597,11 @@ export default function AdvertiserDashboard() {
                              )}
                           </div>
                           <div className="flex items-center gap-2">
+                              {ad.status === "MENUNGGU_PEMBAYARAN" && (
+                                 <Button size="sm" className="h-8 font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
+                                    <DollarSign className="h-4 w-4" /> Konfirmasi Pembayaran
+                                 </Button>
+                              )}
                              {ad.status === "KONTEN_SELESAI" && (
                                 <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
                                    <CalendarCheck className="h-4 w-4" /> Jadwalkan Iklan
@@ -664,6 +736,70 @@ export default function AdvertiserDashboard() {
                 </Card>
               )
             })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="promotors" className="space-y-4">
+          <div className="flex flex-col gap-1 mb-2">
+            <h2 className="text-lg font-semibold">Performa Promotor</h2>
+            <p className="text-xs text-muted-foreground">Monitoring performa pengajuan dari setiap promotor</p>
+          </div>
+
+          <div className="grid gap-4">
+            {promotorData.length === 0 ? (
+              <Card className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground italic border-dashed border-2">
+                <Users className="h-10 w-10 mb-3 opacity-20" />
+                <p>Belum ada promotor yang terdaftar dalam sistem.</p>
+              </Card>
+            ) : (
+              promotorData.map((p) => (
+                <Card key={p.id} className="shadow-sm hover:border-slate-300 transition-all border-slate-100 overflow-hidden">
+                  <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                    {/* Basic Info */}
+                    <div className="p-5 flex-1 bg-slate-50/30">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center font-bold text-sm">
+                          {p.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900">{p.name}</h3>
+                          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-full w-fit mt-0.5 border border-emerald-100">
+                            <MessageSquare className="h-3 w-3" />
+                            {p.phone}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="p-5 flex-[2] grid grid-cols-3 gap-4 items-center">
+                      <div className="text-center space-y-1">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Iklan Konfirmasi</p>
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span className="text-xl font-bold text-slate-900">{p.totalConfirmed}</span>
+                          <span className="text-[10px] text-slate-500 font-medium italic">Pengajuan</span>
+                        </div>
+                      </div>
+
+                      <div className="text-center space-y-1">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Klien</p>
+                        <div className="flex items-baseline justify-center gap-1">
+                          <span className="text-xl font-bold text-slate-900">{p.totalClients}</span>
+                          <span className="text-[10px] text-slate-500 font-medium italic">Orang</span>
+                        </div>
+                      </div>
+
+                      <div className="text-center space-y-1">
+                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Ads Spent</p>
+                        <div className="text-lg font-bold text-emerald-600">
+                          {formatRupiah(p.totalSpent)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
           </div>
         </TabsContent>
       </Tabs>
