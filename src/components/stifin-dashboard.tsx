@@ -187,6 +187,9 @@ export default function StifinDashboard() {
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [searchCity, setSearchCity] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSizeOption, setPageSizeOption] = useState("10")
+  const [customPageSize, setCustomPageSize] = useState("10")
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorData = useMemo(() => {
@@ -306,6 +309,37 @@ export default function StifinDashboard() {
       return matchesStatus && matchesCity
     })
   }, [adRequests, statusFilter, searchCity])
+
+  const effectivePageSize = useMemo(() => {
+    if (pageSizeOption === "custom") {
+      const parsed = parseInt(customPageSize, 10)
+      if (Number.isNaN(parsed)) return 10
+      return Math.min(Math.max(parsed, 1), 1000)
+    }
+    const parsed = parseInt(pageSizeOption, 10)
+    return Number.isNaN(parsed) ? 10 : parsed
+  }, [pageSizeOption, customPageSize])
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredAdRequests.length / effectivePageSize)
+  )
+
+  const paginatedAdRequests = useMemo(() => {
+    const start = (currentPage - 1) * effectivePageSize
+    const end = start + effectivePageSize
+    return filteredAdRequests.slice(start, end)
+  }, [filteredAdRequests, currentPage, effectivePageSize])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [statusFilter, searchCity, pageSizeOption, customPageSize])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
 
   const promotorResults = useMemo(() => {
     return adRequests
@@ -528,7 +562,35 @@ export default function StifinDashboard() {
                 <SelectItem value="SELESAI">Selesai</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={pageSizeOption} onValueChange={setPageSizeOption}>
+              <SelectTrigger className="w-full sm:w-[170px]">
+                <SelectValue placeholder="Baris per halaman" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 baris</SelectItem>
+                <SelectItem value="20">20 baris</SelectItem>
+                <SelectItem value="50">50 baris</SelectItem>
+                <SelectItem value="100">100 baris</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+          {pageSizeOption === "custom" && (
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={1000}
+                value={customPageSize}
+                onChange={(e) => setCustomPageSize(e.target.value)}
+                className="w-full sm:w-[170px]"
+                placeholder="Jumlah baris"
+              />
+              <p className="text-xs text-muted-foreground">
+                1 - 1000 baris
+              </p>
+            </div>
+          )}
 
           {/* List */}
           {filteredAdRequests.length === 0 ? (
@@ -576,7 +638,7 @@ export default function StifinDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredAdRequests.map((ad) => (
+                        {paginatedAdRequests.map((ad) => (
                           <tr
                             key={ad.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -618,7 +680,7 @@ export default function StifinDashboard() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {filteredAdRequests.map((ad) => (
+                {paginatedAdRequests.map((ad) => (
                   <Card key={ad.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between gap-2">
@@ -676,6 +738,46 @@ export default function StifinDashboard() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan{" "}
+                  {filteredAdRequests.length === 0
+                    ? 0
+                    : (currentPage - 1) * effectivePageSize + 1}
+                  {" - "}
+                  {Math.min(
+                    currentPage * effectivePageSize,
+                    filteredAdRequests.length
+                  )}{" "}
+                  dari {filteredAdRequests.length} data
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1}
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.max(1, prev - 1))
+                    }
+                  >
+                    Sebelumnya
+                  </Button>
+                  <span className="text-xs text-muted-foreground px-1">
+                    Halaman {currentPage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= totalPages}
+                    onClick={() =>
+                      setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                    }
+                  >
+                    Berikutnya
+                  </Button>
+                </div>
               </div>
             </div>
           )}

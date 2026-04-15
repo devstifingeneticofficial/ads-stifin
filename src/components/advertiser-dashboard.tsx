@@ -502,12 +502,12 @@ export default function AdvertiserDashboard() {
         </Card>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
-          <TabsTrigger value="overview" className="gap-2"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
-          <TabsTrigger value="master" className="gap-2"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
-          <TabsTrigger value="whatsapp" className="gap-2"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
-          <TabsTrigger value="promotors" className="gap-2"><Users className="h-4 w-4" /> Promotor</TabsTrigger>
+      <Tabs defaultValue="overview" className="w-full space-y-4">
+        <TabsList className="w-full bg-slate-100/50 p-1 border h-auto flex flex-wrap justify-start gap-1">
+          <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
+          <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
+          <TabsTrigger value="whatsapp" className="gap-2 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
+          <TabsTrigger value="promotors" className="gap-2 text-xs sm:text-sm"><Users className="h-4 w-4" /> Promotor</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -520,15 +520,15 @@ export default function AdvertiserDashboard() {
             </div>
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
-              <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
-                <TabsTrigger value="all" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Semua</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Pembayaran</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_KONTEN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Konten</TabsTrigger>
-                <TabsTrigger value="KONTEN_SELESAI" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Konten Selesai</TabsTrigger>
-                <TabsTrigger value="IKLAN_DIJADWALKAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Dijadwalkan</TabsTrigger>
-                <TabsTrigger value="IKLAN_BERJALAN" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Berjalan</TabsTrigger>
-                <TabsTrigger value="SELESAI" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Selesai</TabsTrigger>
-                <TabsTrigger value="FINAL" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Final</TabsTrigger>
+              <TabsList className="w-full bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+                <TabsTrigger value="all" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Semua</TabsTrigger>
+                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Pembayaran</TabsTrigger>
+                <TabsTrigger value="MENUNGGU_KONTEN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Konten</TabsTrigger>
+                <TabsTrigger value="KONTEN_SELESAI" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Konten Selesai</TabsTrigger>
+                <TabsTrigger value="IKLAN_DIJADWALKAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Dijadwalkan</TabsTrigger>
+                <TabsTrigger value="IKLAN_BERJALAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Berjalan</TabsTrigger>
+                <TabsTrigger value="SELESAI" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Selesai</TabsTrigger>
+                <TabsTrigger value="FINAL" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Final</TabsTrigger>
               </TabsList>
             </Tabs>
 
@@ -539,17 +539,17 @@ export default function AdvertiserDashboard() {
                 </Card>
               ) : (
                 filteredRequests.map((ad) => (
-                  <Card key={ad.id} className="shadow-none hover:border-slate-300 transition-all">
+                  <Card key={ad.id} className="shadow-none hover:border-slate-300 transition-all overflow-hidden">
                     <CardHeader className="px-4 py-3 pb-0">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5 min-w-0">
                           <CardTitle className="text-base font-bold flex items-center gap-1.5">
                             <DollarSign className="h-4 w-4 text-muted-foreground" />
                             {ad.city}
                           </CardTitle>
                           <p className="text-[10px] text-muted-foreground font-medium italic">Dibuat {formatDate(ad.createdAt)} • Promotor: {ad.promotor.name}</p>
                         </div>
-                        {getStatusBadge(ad.status)}
+                        <div className="shrink-0">{getStatusBadge(ad.status)}</div>
                       </div>
                     </CardHeader>
                     <CardContent className="px-4 py-3">
@@ -602,30 +602,30 @@ export default function AdvertiserDashboard() {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between pt-1">
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline" asChild className="h-8 font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+                      <div className="pt-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button size="sm" variant="outline" asChild className="h-8 w-full sm:w-auto font-semibold text-xs gap-2 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
                             <a href={waChannelLink || "#"} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" /> DOWNLOAD KONTEN</a>
                           </Button>
                           {ad.paymentProofUrl && (
-                            <Button size="sm" variant="ghost" asChild className="h-8 font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
+                            <Button size="sm" variant="ghost" asChild className="h-8 w-full sm:w-auto font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
                               <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
                             </Button>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {ad.status === "MENUNGGU_PEMBAYARAN" && (
-                            <Button size="sm" className="h-8 font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
+                            <Button size="sm" className="h-8 w-full sm:w-auto font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
                               <DollarSign className="h-4 w-4" /> Konfirmasi Pembayaran
                             </Button>
                           )}
                           {ad.status === "KONTEN_SELESAI" && (
-                            <Button size="sm" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
+                            <Button size="sm" className="h-8 w-full sm:w-auto font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setScheduleDialogOpen(true); setScheduleMode("DEFAULT"); }}>
                               <CalendarCheck className="h-4 w-4" /> Jadwalkan Iklan
                             </Button>
                           )}
                           {ad.status === "IKLAN_BERJALAN" && (
-                            <Button size="sm" variant="secondary" className="h-8 font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
+                            <Button size="sm" variant="secondary" className="h-8 w-full sm:w-auto font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
                               <Upload className="h-4 w-4" /> Upload Laporan
                             </Button>
                           )}
