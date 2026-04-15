@@ -16,5 +16,11 @@
       "binding": "WORKER_SELF_REFERENCE",
       "service": "ads-stifin"
     }
-  ]
+  ],
+  "observability": {
+    "logs": {
+      "enabled": false,
+      "invocation_logs": true
+    }
+  }
 }
