@@ -4,6 +4,9 @@ import { db } from "@/lib/db"
 import { createNotification } from "@/lib/notifications"
 import { sendWhatsApp } from "@/lib/whatsapp"
 
+const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
+const CREATOR_AVAILABILITY_KEY = "content_creator_availability_map"
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -29,21 +32,70 @@ export async function POST(
       return NextResponse.json({ error: "Status pengajuan tidak valid" }, { status: 400 })
     }
 
-    const updated = await db.adRequest.update({
-      where: { id },
-      data: {
-        status: "MENUNGGU_KONTEN",
-      },
-      include: { promotor: true },
+    const updated = await db.$transaction(async (tx) => {
+      const creators = await tx.user.findMany({
+        where: { role: "KONTEN_KREATOR" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
+
+      if (creators.length === 0) {
+        throw new Error("Kreator tidak tersedia")
+      }
+
+      const availabilitySetting = await tx.systemSetting.findUnique({
+        where: { key: CREATOR_AVAILABILITY_KEY },
+      })
+
+      let availabilityMap: Record<string, boolean> = {}
+      if (availabilitySetting?.value) {
+        try {
+          availabilityMap = JSON.parse(availabilitySetting.value) as Record<string, boolean>
+        } catch {
+          availabilityMap = {}
+        }
+      }
+
+      const availableCreators = creators.filter((creator) => availabilityMap[creator.id] !== false)
+      if (availableCreators.length === 0) {
+        throw new Error("Kreator aktif tidak tersedia")
+      }
+
+      const rotation = await tx.systemSetting.findUnique({
+        where: { key: CREATOR_ROTATION_KEY },
+      })
+
+      const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
+      const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
+      const nextIndex = (lastIndex + 1) % availableCreators.length
+      const assignedCreator = availableCreators[nextIndex]
+
+      const ad = await tx.adRequest.update({
+        where: { id },
+        data: {
+          status: "MENUNGGU_KONTEN",
+          contentCreatorId: assignedCreator.id,
+        },
+        include: { promotor: true, contentCreator: true },
+      })
+
+      await tx.systemSetting.upsert({
+        where: { key: CREATOR_ROTATION_KEY },
+        update: { value: String(nextIndex) },
+        create: {
+          key: CREATOR_ROTATION_KEY,
+          value: String(nextIndex),
+        },
+      })
+
+      return ad
     })
 
-    // 1. Notify konten kreator via Dashboard
-    const creators = await db.user.findMany({ where: { role: "KONTEN_KREATOR" } })
-    for (const creator of creators) {
+    // 1. Notify assigned konten kreator via Dashboard
+    if (updated.contentCreatorId) {
       await createNotification(
-        creator.id,
+        updated.contentCreatorId,
         "Pengajuan Iklan Baru",
-        `${updated.promotor.name} dari ${updated.city} mengajukan iklan baru. Siap diproses!`,
+        `${updated.promotor.name} dari ${updated.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
         "AD_REQUEST",
         id
       )
@@ -71,6 +123,14 @@ export async function POST(
 
     return NextResponse.json(updated)
   } catch (error) {
+    if (error instanceof Error && error.message === "Kreator tidak tersedia") {
+      return NextResponse.json({ error: "Belum ada Konten Kreator aktif. Tambahkan kreator terlebih dahulu." }, { status: 400 })
+    }
+
+    if (error instanceof Error && error.message === "Kreator aktif tidak tersedia") {
+      return NextResponse.json({ error: "Semua Konten Kreator sedang offline. Tunggu kreator online terlebih dahulu." }, { status: 400 })
+    }
+
     console.error("Verify payment error:", error)
     return NextResponse.json({ error: "Gagal memverifikasi pembayaran" }, { status: 500 })
   }

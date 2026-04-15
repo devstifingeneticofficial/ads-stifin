@@ -28,6 +28,10 @@ export async function POST(
       return NextResponse.json({ error: "Pengajuan belum siap diproses" }, { status: 400 })
     }
 
+    if (adRequest.contentCreatorId && adRequest.contentCreatorId !== session.id) {
+      return NextResponse.json({ error: "Pengajuan ini ditugaskan ke kreator lain" }, { status: 403 })
+    }
+
     const updated = await db.adRequest.update({
       where: { id },
       data: {

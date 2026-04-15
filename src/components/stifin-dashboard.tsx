@@ -27,6 +27,14 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -106,6 +114,7 @@ interface PayoutBatch {
   totalRequests: number
   totalContents: number
   totalAmount: number
+  transferProofUrl?: string | null
   items: Array<{
     id: string
     adRequestId: string
@@ -253,6 +262,9 @@ export default function StifinDashboard() {
   const [payoutLoading, setPayoutLoading] = useState(false)
   const [selectedPayoutItems, setSelectedPayoutItems] = useState<string[]>([])
   const [payingPayout, setPayingPayout] = useState(false)
+  const [disburseDialogOpen, setDisburseDialogOpen] = useState(false)
+  const [transferProofUrl, setTransferProofUrl] = useState("")
+  const [proofUploading, setProofUploading] = useState(false)
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorData = useMemo(() => {
@@ -369,9 +381,45 @@ export default function StifinDashboard() {
     )
   }
 
+  const handleOpenDisburseDialog = () => {
+    if (selectedPayoutItems.length === 0) {
+      toast.error("Pilih minimal satu item payout")
+      return
+    }
+    setTransferProofUrl("")
+    setDisburseDialogOpen(true)
+  }
+
+  const handleUploadTransferProof = async (file: File | null) => {
+    if (!file) return
+    setProofUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
+      if (!res.ok) throw new Error("Gagal mengunggah bukti transfer")
+      const data = await res.json()
+      if (!data.url) throw new Error("URL bukti transfer tidak valid")
+      setTransferProofUrl(data.url)
+      toast.success("Bukti transfer berhasil diunggah")
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mengunggah bukti transfer")
+    } finally {
+      setProofUploading(false)
+    }
+  }
+
   const handleDisburseSelected = async () => {
     if (selectedPayoutItems.length === 0) {
       toast.error("Pilih minimal satu item payout")
+      return
+    }
+
+    if (!transferProofUrl) {
+      toast.error("Bukti transfer wajib diunggah")
       return
     }
 
@@ -380,7 +428,10 @@ export default function StifinDashboard() {
       const res = await fetch("/api/creator-payouts/disburse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adRequestIds: selectedPayoutItems }),
+        body: JSON.stringify({
+          adRequestIds: selectedPayoutItems,
+          transferProofUrl,
+        }),
       })
 
       if (!res.ok) {
@@ -390,6 +441,8 @@ export default function StifinDashboard() {
 
       toast.success("Pencairan gaji kreator berhasil")
       setSelectedPayoutItems([])
+      setTransferProofUrl("")
+      setDisburseDialogOpen(false)
       fetchPayoutData()
       fetchAdRequests()
     } catch (error: any) {
@@ -1490,7 +1543,7 @@ export default function StifinDashboard() {
               </div>
               <Button
                 size="sm"
-                onClick={handleDisburseSelected}
+                onClick={handleOpenDisburseDialog}
                 disabled={payingPayout || selectedPayoutItems.length === 0}
               >
                 {payingPayout ? "Memproses..." : "Bayar Item Terpilih"}
@@ -1567,6 +1620,16 @@ export default function StifinDashboard() {
                       </div>
                     </summary>
                     <div className="mt-3 space-y-2">
+                      {batch.transferProofUrl && (
+                        <a
+                          href={batch.transferProofUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block text-xs text-blue-600 hover:underline"
+                        >
+                          Lihat bukti transfer
+                        </a>
+                      )}
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
                           <p className="font-medium">
@@ -1583,6 +1646,66 @@ export default function StifinDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={disburseDialogOpen} onOpenChange={setDisburseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Pencairan Gaji Kreator</DialogTitle>
+            <DialogDescription>
+              Pastikan nominal transfer dan bukti transfer sudah sesuai sebelum mencairkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-md border bg-slate-50 p-3 text-sm">
+              <p className="font-medium">
+                Total transfer: {formatRupiah(selectedPayoutNominal)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {selectedPayoutItems.length} request • {selectedPayoutContents} konten
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Upload bukti transfer</p>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => handleUploadTransferProof(e.target.files?.[0] || null)}
+              />
+              {proofUploading && (
+                <p className="text-xs text-muted-foreground">Mengunggah bukti transfer...</p>
+              )}
+              {transferProofUrl && (
+                <a
+                  href={transferProofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Bukti transfer berhasil diunggah, klik untuk lihat
+                </a>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDisburseDialogOpen(false)}
+              disabled={payingPayout}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleDisburseSelected}
+              disabled={payingPayout || proofUploading || !transferProofUrl}
+            >
+              {payingPayout ? "Memproses..." : "Konfirmasi Bayar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

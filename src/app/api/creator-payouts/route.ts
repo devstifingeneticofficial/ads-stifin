@@ -91,6 +91,7 @@ export async function GET() {
         totalRequests: batch.totalRequests,
         totalContents: batch.totalContents,
         totalAmount: batch.totalAmount,
+        transferProofUrl: batch.transferProofUrl,
         items: batch.items.map((item) => ({
           id: item.id,
           adRequestId: item.adRequestId,

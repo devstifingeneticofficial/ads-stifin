@@ -42,6 +42,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
 import {
   Sheet,
   SheetContent,
@@ -253,6 +254,8 @@ export default function KontenKreatorDashboard() {
   const [activeTab, setActiveTab] = useState("MENUNGGU_KONTEN")
   const [payoutData, setPayoutData] = useState<CreatorPayoutData | null>(null)
   const [payoutLoading, setPayoutLoading] = useState(false)
+  const [isOnline, setIsOnline] = useState(true)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
 
   // Action states
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -339,6 +342,18 @@ export default function KontenKreatorDashboard() {
     }
   }, [])
 
+  const fetchCreatorAvailability = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creator-availability")
+      if (!res.ok) throw new Error("Gagal memuat status online")
+      const data = await res.json()
+      setIsOnline(data.isOnline !== false)
+    } catch {
+      // silent fail: fallback tetap online
+      setIsOnline(true)
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchNotifications()
@@ -350,6 +365,34 @@ export default function KontenKreatorDashboard() {
       fetchPayouts()
     }
   }, [user, fetchPayouts])
+
+  useEffect(() => {
+    if (user) {
+      fetchCreatorAvailability()
+    }
+  }, [user, fetchCreatorAvailability])
+
+  const handleToggleAvailability = async (nextOnline: boolean) => {
+    setAvailabilityLoading(true)
+    try {
+      const res = await fetch("/api/creator-availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isOnline: nextOnline }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal menyimpan status online")
+      }
+      setIsOnline(nextOnline)
+      toast.success(nextOnline ? "Status Anda: Online (siap menerima request)" : "Status Anda: Offline (tidak ikut rotasi request)")
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Gagal menyimpan status online"
+      toast.error(message)
+    } finally {
+      setAvailabilityLoading(false)
+    }
+  }
 
   // ── Computed stats ───────────────────────────────────────────────────────
 
@@ -692,7 +735,7 @@ export default function KontenKreatorDashboard() {
   return (
     <div className="space-y-6">
       {/* ── Header with Notification Bell ─────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             Dashboard Konten Kreator
@@ -701,8 +744,27 @@ export default function KontenKreatorDashboard() {
             Kelola pembuatan konten iklan untuk semua pengajuan
           </p>
         </div>
-
-
+        <Card className="w-full sm:w-auto border-slate-200">
+          <CardContent className="py-3 px-4">
+            <div className="flex items-center gap-3">
+              <div className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold leading-none">
+                  Status Ketersediaan: {isOnline ? "Online" : "Offline"}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Rotasi request hanya untuk kreator yang online
+                </p>
+              </div>
+              <Switch
+                checked={isOnline}
+                onCheckedChange={handleToggleAvailability}
+                disabled={availabilityLoading}
+                className="data-[state=checked]:bg-emerald-500"
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ── Stats Cards ───────────────────────────────────────────────────── */}

@@ -782,6 +782,7 @@ export default function AdvertiserDashboard() {
               { slug: "content-finished-promotor", name: "Konten Selesai (Promotor)", desc: "Video siap diunduh", default: "Halo *{promotor}*, Konten iklan *{city}* sudah selesai! Silakan cek dashboard." },
               { slug: "ad-scheduled-promotor", name: "Iklan Dijadwalkan (Promotor)", desc: "Tanggal tayang diputuskan", default: "Kabar gembira *{promotor}*! Iklan *{city}* telah dijadwalkan tayang." },
               { slug: "client-report-stifin", name: "Laporan Klien (Admin STIFIn)", desc: "Laporan harian leads", default: "Admin: *{promotor}* melaporkan *{jumlah}* klien untuk iklan *{city}*." },
+              { slug: "salary-disbursed-creator", name: "Gaji Cair (Konten Kreator)", desc: "Dikirim saat admin mencairkan gaji kreator", default: "Halo *{creator}*, gaji Anda telah dicairkan pada *{tanggal}*. Total *{jumlah_konten} konten* dari *{jumlah_request} request* dengan nominal *{nominal}*." },
             ].map((tpl) => {
               const current = notifTemplates.find(t => t.slug === tpl.slug)
               const isActive = current ? current.isActive : true
