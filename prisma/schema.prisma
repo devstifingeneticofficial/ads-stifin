@@ -20,6 +20,8 @@ model User {
 
   adRequests    AdRequest[]
   notifications Notification[]
+  contentAssignments AdRequest[] @relation("ContentCreatorAssignments")
+  creatorPayoutBatches CreatorPayoutBatch[]
 }
 
 model AdRequest {
@@ -43,9 +45,12 @@ model AdRequest {
   adStartDate     DateTime?
   adEndDate       DateTime?
   promotorId      String
+  contentCreatorId String?
   promotor        User            @relation(fields: [promotorId], references: [id], onDelete: Cascade)
+  contentCreator  User?           @relation("ContentCreatorAssignments", fields: [contentCreatorId], references: [id], onDelete: SetNull)
   adReport        AdReport?
   promotorResult  PromotorResult?
+  creatorPayoutItem CreatorPayoutItem?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -109,4 +114,31 @@ model SystemSetting {
   key       String   @unique
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model CreatorPayoutBatch {
+  id           String   @id @default(cuid())
+  creatorId    String
+  creator      User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  payoutDate   DateTime @default(now())
+  totalRequests Int
+  totalContents Int
+  totalAmount  Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items CreatorPayoutItem[]
+}
+
+model CreatorPayoutItem {
+  id           String   @id @default(cuid())
+  batchId      String
+  batch        CreatorPayoutBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  adRequestId  String   @unique
+  adRequest    AdRequest @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
+  requestAmount Int
+  jjCount      Int      @default(3)
+  voCount      Int      @default(1)
+  contentCount Int      @default(4)
+  createdAt    DateTime @default(now())
 }

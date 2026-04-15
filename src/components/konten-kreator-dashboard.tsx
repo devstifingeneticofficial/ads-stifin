@@ -14,6 +14,9 @@ import {
   Megaphone,
   Eye,
   Loader2,
+  Wallet,
+  ReceiptText,
+  ChevronDown,
 } from "lucide-react"
 
 import {
@@ -60,6 +63,7 @@ import {
 interface AdRequest {
   id: string
   promotor: { name: string }
+  contentCreator?: { id: string; name: string; email: string } | null
   city: string
   startDate: string
   testEndDate: string | null
@@ -83,6 +87,46 @@ interface Notification {
   message: string
   read: boolean
   createdAt: string
+}
+
+interface CreatorPayoutItem {
+  id: string
+  adRequestId: string
+  city: string
+  startDate: string
+  testEndDate: string | null
+  promotorName: string
+  requestAmount: number
+  contentCount: number
+  completedAt: string
+}
+
+interface CreatorPayoutBatch {
+  id: string
+  payoutDate: string
+  totalRequests: number
+  totalContents: number
+  totalAmount: number
+  items: CreatorPayoutItem[]
+}
+
+interface CreatorPayoutData {
+  unpaidSummary: {
+    totalRequests: number
+    totalContents: number
+    totalAmount: number
+  }
+  unpaidItems: Array<{
+    adRequestId: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    promotorName: string
+    amount: number
+    contentCount: number
+    completedAt: string
+  }>
+  paidBatches: CreatorPayoutBatch[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -207,6 +251,8 @@ export default function KontenKreatorDashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("MENUNGGU_KONTEN")
+  const [payoutData, setPayoutData] = useState<CreatorPayoutData | null>(null)
+  const [payoutLoading, setPayoutLoading] = useState(false)
 
   // Action states
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -232,14 +278,19 @@ export default function KontenKreatorDashboard() {
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data: AdRequest[] = await res.json()
       // Konten kreator hanya memproses iklan yang sudah dibayar (minimal MENUNGGU_KONTEN)
-      const filteredData = data.filter((ad) => ad.status !== "MENUNGGU_PEMBAYARAN")
+      const filteredData = data.filter((ad) => {
+        if (ad.status === "MENUNGGU_PEMBAYARAN") return false
+        if (ad.status === "MENUNGGU_KONTEN") return true
+        if (!ad.contentCreator) return false
+        return ad.contentCreator.id === user?.id
+      })
       setAdRequests(filteredData)
     } catch {
       toast.error("Gagal memuat data pengajuan iklan")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     if (user) {
@@ -274,11 +325,31 @@ export default function KontenKreatorDashboard() {
     }
   }, [])
 
+  const fetchPayouts = useCallback(async () => {
+    setPayoutLoading(true)
+    try {
+      const res = await fetch("/api/creator-payouts")
+      if (!res.ok) throw new Error("Gagal memuat data gaji")
+      const data: CreatorPayoutData = await res.json()
+      setPayoutData(data)
+    } catch {
+      // silent fail
+    } finally {
+      setPayoutLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchNotifications()
     }
   }, [user, fetchNotifications])
+
+  useEffect(() => {
+    if (user) {
+      fetchPayouts()
+    }
+  }, [user, fetchPayouts])
 
   // ── Computed stats ───────────────────────────────────────────────────────
 
@@ -328,6 +399,7 @@ export default function KontenKreatorDashboard() {
       toast.success("Status iklan diperbarui!")
       setCompleteConfirmId(null)
       fetchAdRequests()
+      fetchPayouts()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Gagal memperbarui status"
       toast.error(message)
@@ -709,6 +781,10 @@ export default function KontenKreatorDashboard() {
           <TabsTrigger value="SELESAI" className="gap-2">
             Selesai
           </TabsTrigger>
+          <TabsTrigger value="GAJI" className="gap-2">
+            <Wallet className="h-4 w-4" />
+            Gaji
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="MENUNGGU_KONTEN" className="space-y-4">
@@ -733,6 +809,131 @@ export default function KontenKreatorDashboard() {
             <p className="text-sm text-muted-foreground italic">Riwayat konten yang sudah dikirim ke Advertiser.</p>
           </div>
           {renderAdCards("SELESAI")}
+        </TabsContent>
+
+        <TabsContent value="GAJI" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Perhitungan Gaji</h2>
+            <p className="text-sm text-muted-foreground italic">Gaji dihitung dari request dengan status Konten Selesai (Rp20.000/request).</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Belum Dicairkan</CardTitle>
+                <Wallet className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">
+                  {formatRupiah(payoutData?.unpaidSummary.totalAmount || 0)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutData?.unpaidSummary.totalRequests || 0).toLocaleString("id-ID")} request
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Jumlah Konten</CardTitle>
+                <FileText className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  {(payoutData?.unpaidSummary.totalContents || 0).toLocaleString("id-ID")}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Item konten belum dicairkan</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sudah Dicairkan</CardTitle>
+                <ReceiptText className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-emerald-600">
+                  {formatRupiah(
+                    (payoutData?.paidBatches || []).reduce((sum, b) => sum + b.totalAmount, 0)
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutData?.paidBatches || []).length} invoice pencairan
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Belum Dicairkan</CardTitle>
+              <CardDescription>Daftar item gaji yang menunggu pencairan admin STIFIn.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {payoutLoading ? (
+                <p className="text-sm text-muted-foreground">Memuat data gaji...</p>
+              ) : (payoutData?.unpaidItems.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada item gaji yang menunggu pencairan.</p>
+              ) : (
+                payoutData!.unpaidItems.map((item) => (
+                  <div key={item.adRequestId} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium text-sm">
+                          {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Promotor: {item.promotorName}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{formatRupiah(item.amount)}</p>
+                        <p className="text-[11px] text-muted-foreground">{item.contentCount} konten</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Riwayat Sudah Dicairkan</CardTitle>
+              <CardDescription>Klik invoice untuk melihat detail item pencairan.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(payoutData?.paidBatches.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada invoice pencairan.</p>
+              ) : (
+                payoutData!.paidBatches.map((batch) => (
+                  <details key={batch.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-sm">
+                          Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-emerald-700">
+                            {formatRupiah(batch.totalAmount)}
+                          </p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {batch.items.map((item) => (
+                        <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                          <p className="font-medium">
+                            {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {item.contentCount} konten • {formatRupiah(item.requestAmount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

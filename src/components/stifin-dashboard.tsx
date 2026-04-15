@@ -14,6 +14,9 @@ import {
   Building2,
   Target,
   MessageSquare,
+  Wallet,
+  ReceiptText,
+  ChevronDown,
 } from "lucide-react"
 
 import {
@@ -84,6 +87,47 @@ interface AdRequest {
   adReport: AdReport | null
 }
 
+interface PayoutUnpaidItem {
+  adRequestId: string
+  creatorId: string
+  creatorName: string
+  promotorName: string
+  city: string
+  startDate: string
+  testEndDate: string | null
+  amount: number
+  contentCount: number
+}
+
+interface PayoutBatch {
+  id: string
+  creatorName: string
+  payoutDate: string
+  totalRequests: number
+  totalContents: number
+  totalAmount: number
+  items: Array<{
+    id: string
+    adRequestId: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    promotorName: string
+    requestAmount: number
+    contentCount: number
+  }>
+}
+
+interface PayoutData {
+  unpaidSummary: {
+    totalRequests: number
+    totalContents: number
+    totalAmount: number
+  }
+  unpaidItems: PayoutUnpaidItem[]
+  paidBatches: PayoutBatch[]
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const formatRupiah = (value: number): string =>
@@ -105,6 +149,21 @@ const formatShortDate = (dateStr: string): string => {
     month: "short",
     year: "numeric",
   })
+}
+
+const formatTestDate = (start: string, end?: string | null) => {
+  const s = new Date(start)
+  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+  if (!end) {
+    return `${s.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+
+  const e = new Date(end)
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
+  }
+  return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
 }
 
 const statusConfig: Record<
@@ -190,6 +249,10 @@ export default function StifinDashboard() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSizeOption, setPageSizeOption] = useState("10")
   const [customPageSize, setCustomPageSize] = useState("10")
+  const [payoutData, setPayoutData] = useState<PayoutData | null>(null)
+  const [payoutLoading, setPayoutLoading] = useState(false)
+  const [selectedPayoutItems, setSelectedPayoutItems] = useState<string[]>([])
+  const [payingPayout, setPayingPayout] = useState(false)
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorData = useMemo(() => {
@@ -256,6 +319,20 @@ export default function StifinDashboard() {
       setLoading(false)
     }
   }, [])
+
+  const fetchPayoutData = useCallback(async () => {
+    setPayoutLoading(true)
+    try {
+      const res = await fetch("/api/creator-payouts")
+      if (!res.ok) throw new Error("Gagal memuat data payout")
+      const data: PayoutData = await res.json()
+      setPayoutData(data)
+    } catch {
+      toast.error("Gagal memuat data payout kreator")
+    } finally {
+      setPayoutLoading(false)
+    }
+  }, [])
   
   const [validatingId, setValidatingId] = useState<string | null>(null)
 
@@ -280,8 +357,47 @@ export default function StifinDashboard() {
   useEffect(() => {
     if (user) {
       fetchAdRequests()
+      fetchPayoutData()
     }
-  }, [user, fetchAdRequests])
+  }, [user, fetchAdRequests, fetchPayoutData])
+
+  const togglePayoutItem = (adRequestId: string) => {
+    setSelectedPayoutItems((prev) =>
+      prev.includes(adRequestId)
+        ? prev.filter((id) => id !== adRequestId)
+        : [...prev, adRequestId]
+    )
+  }
+
+  const handleDisburseSelected = async () => {
+    if (selectedPayoutItems.length === 0) {
+      toast.error("Pilih minimal satu item payout")
+      return
+    }
+
+    setPayingPayout(true)
+    try {
+      const res = await fetch("/api/creator-payouts/disburse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adRequestIds: selectedPayoutItems }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal mencairkan gaji")
+      }
+
+      toast.success("Pencairan gaji kreator berhasil")
+      setSelectedPayoutItems([])
+      fetchPayoutData()
+      fetchAdRequests()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mencairkan gaji kreator")
+    } finally {
+      setPayingPayout(false)
+    }
+  }
 
   // ── Computed stats ─────────────────────────────────────────────────────────
 
@@ -396,6 +512,14 @@ export default function StifinDashboard() {
     (sum, r) => sum + (r.amountSpent ?? 0),
     0
   )
+
+  const selectedPayoutNominal = (payoutData?.unpaidItems || [])
+    .filter((item) => selectedPayoutItems.includes(item.adRequestId))
+    .reduce((sum, item) => sum + item.amount, 0)
+
+  const selectedPayoutContents = (payoutData?.unpaidItems || [])
+    .filter((item) => selectedPayoutItems.includes(item.adRequestId))
+    .reduce((sum, item) => sum + item.contentCount, 0)
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -529,6 +653,7 @@ export default function StifinDashboard() {
           <TabsTrigger value="promotor" className="text-xs font-semibold">Laporan Promotor</TabsTrigger>
           <TabsTrigger value="advertiser" className="text-xs font-semibold">Laporan Advertiser</TabsTrigger>
           <TabsTrigger value="top_promotor" className="text-xs font-semibold">Top Promotor</TabsTrigger>
+          <TabsTrigger value="gaji_kreator" className="text-xs font-semibold">Gaji Kreator</TabsTrigger>
         </TabsList>
 
         {/* ── Tab 1: Semua Pengajuan ─────────────────────────────────────────── */}
@@ -1302,6 +1427,160 @@ export default function StifinDashboard() {
               </div>
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="gaji_kreator" className="space-y-4 mt-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Pencairan Gaji Konten Kreator</h2>
+            <p className="text-xs text-muted-foreground">
+              Pilih item konten status KONTEN SELESAI yang ingin dicairkan.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Belum Dicairkan</CardTitle>
+                <Wallet className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">
+                  {formatRupiah(payoutData?.unpaidSummary.totalAmount || 0)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutData?.unpaidSummary.totalRequests || 0).toLocaleString("id-ID")} request
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Terpilih Dicairkan</CardTitle>
+                <ReceiptText className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatRupiah(selectedPayoutNominal)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedPayoutItems.length} request • {selectedPayoutContents} konten
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sudah Dicairkan</CardTitle>
+                <DollarSign className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-emerald-600">
+                  {formatRupiah((payoutData?.paidBatches || []).reduce((sum, b) => sum + b.totalAmount, 0))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutData?.paidBatches || []).length} invoice
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Daftar Item Belum Dicairkan</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">Pilih satu atau beberapa item untuk dicairkan.</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleDisburseSelected}
+                disabled={payingPayout || selectedPayoutItems.length === 0}
+              >
+                {payingPayout ? "Memproses..." : "Bayar Item Terpilih"}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {payoutLoading ? (
+                <p className="text-sm text-muted-foreground">Memuat data payout...</p>
+              ) : (payoutData?.unpaidItems.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada item payout yang menunggu pencairan.</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between pb-1">
+                    <button
+                      className="text-xs text-blue-600 hover:underline"
+                      onClick={() =>
+                        setSelectedPayoutItems((prev) =>
+                          prev.length === (payoutData?.unpaidItems.length || 0)
+                            ? []
+                            : (payoutData?.unpaidItems || []).map((i) => i.adRequestId)
+                        )
+                      }
+                    >
+                      {selectedPayoutItems.length === (payoutData?.unpaidItems.length || 0)
+                        ? "Batalkan pilih semua"
+                        : "Pilih semua"}
+                    </button>
+                    <span className="text-xs text-muted-foreground">{selectedPayoutItems.length} item dipilih</span>
+                  </div>
+                  {(payoutData?.unpaidItems || []).map((item) => (
+                    <label key={item.adRequestId} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedPayoutItems.includes(item.adRequestId)}
+                        onChange={() => togglePayoutItem(item.adRequestId)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                          <p className="font-medium text-sm">
+                            {item.creatorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
+                          </p>
+                          <p className="font-semibold text-sm">{formatRupiah(item.amount)}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Promotor: {item.promotorName} • {item.contentCount} konten</p>
+                      </div>
+                    </label>
+                  ))}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Riwayat Invoice Pencairan</CardTitle>
+              <p className="text-xs text-muted-foreground">Klik invoice untuk melihat detail item.</p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(payoutData?.paidBatches.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada invoice pencairan.</p>
+              ) : (
+                (payoutData?.paidBatches || []).map((batch) => (
+                  <details key={batch.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <p className="font-medium text-sm">
+                          Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {batch.items.map((item) => (
+                        <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                          <p className="font-medium">
+                            {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                          </p>
+                          <p className="text-muted-foreground">{item.contentCount} konten • {formatRupiah(item.requestAmount)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

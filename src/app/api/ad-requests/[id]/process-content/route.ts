@@ -30,7 +30,10 @@ export async function POST(
 
     const updated = await db.adRequest.update({
       where: { id },
-      data: { status: "DIPROSES" },
+      data: {
+        status: "DIPROSES",
+        contentCreatorId: session.id,
+      },
       include: { promotor: true },
     })
 

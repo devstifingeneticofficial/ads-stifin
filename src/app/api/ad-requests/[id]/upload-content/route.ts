@@ -34,11 +34,16 @@ export async function POST(
       return NextResponse.json({ error: "Pengajuan belum dalam proses" }, { status: 400 })
     }
 
+    if (adRequest.contentCreatorId && adRequest.contentCreatorId !== session.id) {
+      return NextResponse.json({ error: "Pengajuan ini sedang dikerjakan oleh kreator lain" }, { status: 403 })
+    }
+
     const updated = await db.adRequest.update({
       where: { id },
       data: {
         contentUrl,
         status: "KONTEN_SELESAI",
+        contentCreatorId: session.id,
       },
       include: { promotor: true },
     })

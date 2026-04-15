@@ -17,6 +17,7 @@ export async function GET(
       where: { id },
       include: {
         promotor: { select: { id: true, name: true, email: true, city: true } },
+        contentCreator: { select: { id: true, name: true, email: true } },
         adReport: true,
         promotorResult: true,
       },
@@ -75,7 +76,7 @@ export async function PUT(
           ppn,
           totalPayment,
         },
-        include: { promotor: true, adReport: true, promotorResult: true },
+        include: { promotor: true, contentCreator: true, adReport: true, promotorResult: true },
       })
 
       return NextResponse.json(updated)

@@ -23,6 +23,9 @@ import {
   AlertCircle,
   Megaphone,
   Users,
+  Wallet,
+  ReceiptText,
+  ChevronDown,
 } from "lucide-react"
 
 import {
@@ -101,6 +104,43 @@ interface AdRequest {
   promotorResult: PromotorResult | null
   promotorNote: string | null
   createdAt: string
+}
+
+interface PayoutBatchMonitor {
+  id: string
+  creatorName: string
+  payoutDate: string
+  totalRequests: number
+  totalContents: number
+  totalAmount: number
+  items: Array<{
+    id: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    promotorName: string
+    contentCount: number
+    requestAmount: number
+  }>
+}
+
+interface PayoutMonitorData {
+  unpaidSummary: {
+    totalRequests: number
+    totalContents: number
+    totalAmount: number
+  }
+  unpaidItems: Array<{
+    adRequestId: string
+    creatorName: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    promotorName: string
+    amount: number
+    contentCount: number
+  }>
+  paidBatches: PayoutBatchMonitor[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -209,6 +249,7 @@ export default function AdvertiserDashboard() {
   const [inputAmountSpent, setInputAmountSpent] = useState("")
   const [inputTotalLeads, setInputTotalLeads] = useState("")
   const [inputCPR, setInputCPR] = useState("")
+  const [payoutMonitor, setPayoutMonitor] = useState<PayoutMonitorData | null>(null)
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorStats = (adRequests: AdRequest[]) => {
@@ -300,14 +341,26 @@ export default function AdvertiserDashboard() {
     } catch { /* silent */ }
   }, [])
 
+  const fetchPayoutMonitor = useCallback(async () => {
+    try {
+      const res = await fetch("/api/creator-payouts")
+      if (!res.ok) throw new Error("Gagal mengambil data payout")
+      const data: PayoutMonitorData = await res.json()
+      setPayoutMonitor(data)
+    } catch {
+      // silent fail
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchAdRequests()
       fetchBriefTemplates()
       fetchNotifTemplates()
       fetchWaChannelLink()
+      fetchPayoutMonitor()
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink])
+  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor])
 
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
@@ -507,6 +560,7 @@ export default function AdvertiserDashboard() {
           <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
+          <TabsTrigger value="payouts" className="gap-2 text-xs sm:text-sm"><Wallet className="h-4 w-4" /> Pencairan Kreator</TabsTrigger>
           <TabsTrigger value="promotors" className="gap-2 text-xs sm:text-sm"><Users className="h-4 w-4" /> Promotor</TabsTrigger>
         </TabsList>
 
@@ -754,6 +808,113 @@ export default function AdvertiserDashboard() {
               )
             })}
           </div>
+        </TabsContent>
+
+        <TabsContent value="payouts" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Monitoring Pencairan Gaji Kreator</h2>
+            <p className="text-xs text-muted-foreground">Pantau item yang belum cair dan invoice yang sudah dicairkan admin STIFIn.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Belum Dicairkan</CardTitle>
+                <Wallet className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-orange-600">
+                  {formatRupiah(payoutMonitor?.unpaidSummary.totalAmount || 0)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutMonitor?.unpaidSummary.totalRequests || 0)} request
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Konten Belum Cair</CardTitle>
+                <FileText className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-blue-600">
+                  {(payoutMonitor?.unpaidSummary.totalContents || 0).toLocaleString("id-ID")}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Total item konten</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sudah Dicairkan</CardTitle>
+                <ReceiptText className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-emerald-600">
+                  {formatRupiah((payoutMonitor?.paidBatches || []).reduce((sum, b) => sum + b.totalAmount, 0))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(payoutMonitor?.paidBatches || []).length} invoice
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="shadow-none border-slate-100">
+            <CardHeader>
+              <CardTitle className="text-base">Invoice Pencairan</CardTitle>
+              <CardDescription>Klik invoice untuk melihat rincian item konten yang dibayar.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="space-y-2 pb-4 border-b border-slate-100">
+                <p className="text-sm font-semibold">Daftar Item Belum Dicairkan</p>
+                {(payoutMonitor?.unpaidItems.length || 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground">Tidak ada item belum dicairkan.</p>
+                ) : (
+                  (payoutMonitor?.unpaidItems || []).map((item) => (
+                    <div key={item.adRequestId} className="rounded-md bg-slate-50 p-2 text-xs">
+                      <p className="font-medium">
+                        {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                      </p>
+                      <p className="text-muted-foreground">
+                        Kreator: {item.creatorName} • {item.contentCount} konten • {formatRupiah(item.amount)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <p className="text-sm font-semibold pt-2">Riwayat Invoice Dicairkan</p>
+              {(payoutMonitor?.paidBatches.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada invoice pencairan.</p>
+              ) : (
+                (payoutMonitor?.paidBatches || []).map((batch) => (
+                  <details key={batch.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <p className="text-sm font-medium">
+                          Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {batch.items.map((item) => (
+                        <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                          <p className="font-medium">
+                            {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                          </p>
+                          <p className="text-muted-foreground">{item.contentCount} konten • {formatRupiah(item.requestAmount)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="promotors" className="space-y-4">

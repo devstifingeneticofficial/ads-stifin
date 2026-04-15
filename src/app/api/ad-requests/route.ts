@@ -60,6 +60,7 @@ export async function GET(req: Request) {
       where,
       include: {
         promotor: { select: { id: true, name: true, email: true, city: true, phone: true } },
+        contentCreator: { select: { id: true, name: true, email: true } },
         adReport: true,
         promotorResult: true,
       },
