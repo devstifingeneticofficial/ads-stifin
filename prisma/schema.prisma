@@ -22,6 +22,7 @@ model User {
   notifications Notification[]
   contentAssignments AdRequest[] @relation("ContentCreatorAssignments")
   creatorPayoutBatches CreatorPayoutBatch[]
+  promotorBonusBatches PromotorBonusBatch[]
 }
 
 model AdRequest {
@@ -51,6 +52,7 @@ model AdRequest {
   adReport        AdReport?
   promotorResult  PromotorResult?
   creatorPayoutItem CreatorPayoutItem?
+  promotorBonusItems PromotorBonusItem[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -74,6 +76,7 @@ model PromotorResult {
   previousTotalClients Int?
   note         String?
   status       String    @default("PENDING") // PENDING, VALID
+  bonusPayoutItem PromotorBonusItem?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
@@ -142,4 +145,32 @@ model CreatorPayoutItem {
   voCount      Int      @default(1)
   contentCount Int      @default(4)
   createdAt    DateTime @default(now())
+}
+
+model PromotorBonusBatch {
+  id            String   @id @default(cuid())
+  promotorId    String
+  promotor      User     @relation(fields: [promotorId], references: [id], onDelete: Cascade)
+  payoutDate    DateTime @default(now())
+  totalItems    Int
+  totalClients  Int
+  totalAmount   Int
+  transferProofUrl String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items PromotorBonusItem[]
+}
+
+model PromotorBonusItem {
+  id              String   @id @default(cuid())
+  batchId         String
+  batch           PromotorBonusBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  promotorResultId String  @unique
+  promotorResult  PromotorResult @relation(fields: [promotorResultId], references: [id], onDelete: Cascade)
+  adRequestId     String
+  adRequest       AdRequest @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
+  clientCount     Int
+  bonusAmount     Int
+  createdAt       DateTime @default(now())
 }

@@ -109,6 +109,7 @@ interface PayoutUnpaidItem {
 
 interface PayoutBatch {
   id: string
+  invoiceNumber?: string
   creatorName: string
   payoutDate: string
   totalRequests: number
@@ -135,6 +136,55 @@ interface PayoutData {
   }
   unpaidItems: PayoutUnpaidItem[]
   paidBatches: PayoutBatch[]
+}
+
+interface BonusUnpaidItem {
+  promotorResultId: string
+  adRequestId: string
+  promotorId: string
+  promotorName: string
+  city: string
+  startDate: string
+  testEndDate: string | null
+  clientCount: number
+  amount: number
+}
+
+interface BonusBatch {
+  id: string
+  invoiceNumber?: string
+  promotorId: string
+  promotorName: string
+  promotorLabel?: string
+  payoutDate: string
+  totalItems: number
+  totalClients: number
+  totalAmount: number
+  transferProofUrl?: string | null
+  items: Array<{
+    id: string
+    promotorResultId: string
+    adRequestId: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    promotorName: string
+    clientCount: number
+    bonusAmount: number
+  }>
+}
+
+interface BonusData {
+  config: {
+    bonusPerClient: number
+  }
+  unpaidSummary: {
+    totalItems: number
+    totalClients: number
+    totalAmount: number
+  }
+  unpaidItems: BonusUnpaidItem[]
+  paidBatches: BonusBatch[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -265,6 +315,13 @@ export default function StifinDashboard() {
   const [disburseDialogOpen, setDisburseDialogOpen] = useState(false)
   const [transferProofUrl, setTransferProofUrl] = useState("")
   const [proofUploading, setProofUploading] = useState(false)
+  const [bonusData, setBonusData] = useState<BonusData | null>(null)
+  const [bonusLoading, setBonusLoading] = useState(false)
+  const [selectedBonusItems, setSelectedBonusItems] = useState<string[]>([])
+  const [payingBonus, setPayingBonus] = useState(false)
+  const [bonusDisburseDialogOpen, setBonusDisburseDialogOpen] = useState(false)
+  const [bonusTransferProofUrl, setBonusTransferProofUrl] = useState("")
+  const [bonusProofUploading, setBonusProofUploading] = useState(false)
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorData = useMemo(() => {
@@ -345,6 +402,20 @@ export default function StifinDashboard() {
       setPayoutLoading(false)
     }
   }, [])
+
+  const fetchBonusData = useCallback(async () => {
+    setBonusLoading(true)
+    try {
+      const res = await fetch("/api/advertiser-bonuses")
+      if (!res.ok) throw new Error("Gagal memuat data bonus")
+      const data: BonusData = await res.json()
+      setBonusData(data)
+    } catch {
+      toast.error("Gagal memuat data bonus advertiser")
+    } finally {
+      setBonusLoading(false)
+    }
+  }, [])
   
   const [validatingId, setValidatingId] = useState<string | null>(null)
 
@@ -359,6 +430,7 @@ export default function StifinDashboard() {
       }
       toast.success("Laporan berhasil divalidasi")
       fetchAdRequests()
+      fetchBonusData()
     } catch {
       toast.error("Gagal memvalidasi laporan")
     } finally {
@@ -370,8 +442,9 @@ export default function StifinDashboard() {
     if (user) {
       fetchAdRequests()
       fetchPayoutData()
+      fetchBonusData()
     }
-  }, [user, fetchAdRequests, fetchPayoutData])
+  }, [user, fetchAdRequests, fetchPayoutData, fetchBonusData])
 
   const togglePayoutItem = (adRequestId: string) => {
     setSelectedPayoutItems((prev) =>
@@ -449,6 +522,85 @@ export default function StifinDashboard() {
       toast.error(error?.message || "Gagal mencairkan gaji kreator")
     } finally {
       setPayingPayout(false)
+    }
+  }
+
+  const toggleBonusItem = (promotorResultId: string) => {
+    setSelectedBonusItems((prev) =>
+      prev.includes(promotorResultId)
+        ? prev.filter((id) => id !== promotorResultId)
+        : [...prev, promotorResultId]
+    )
+  }
+
+  const handleOpenBonusDisburseDialog = () => {
+    if (selectedBonusItems.length === 0) {
+      toast.error("Pilih minimal satu item bonus")
+      return
+    }
+    setBonusTransferProofUrl("")
+    setBonusDisburseDialogOpen(true)
+  }
+
+  const handleUploadBonusTransferProof = async (file: File | null) => {
+    if (!file) return
+    setBonusProofUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
+      if (!res.ok) throw new Error("Gagal mengunggah bukti transfer bonus")
+      const data = await res.json()
+      if (!data.url) throw new Error("URL bukti transfer bonus tidak valid")
+      setBonusTransferProofUrl(data.url)
+      toast.success("Bukti transfer bonus berhasil diunggah")
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mengunggah bukti transfer bonus")
+    } finally {
+      setBonusProofUploading(false)
+    }
+  }
+
+  const handleDisburseSelectedBonus = async () => {
+    if (selectedBonusItems.length === 0) {
+      toast.error("Pilih minimal satu item bonus")
+      return
+    }
+
+    if (!bonusTransferProofUrl) {
+      toast.error("Bukti transfer bonus wajib diunggah")
+      return
+    }
+
+    setPayingBonus(true)
+    try {
+      const res = await fetch("/api/advertiser-bonuses/disburse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          promotorResultIds: selectedBonusItems,
+          transferProofUrl: bonusTransferProofUrl,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal mencairkan bonus")
+      }
+
+      toast.success("Pencairan bonus berhasil")
+      setSelectedBonusItems([])
+      setBonusTransferProofUrl("")
+      setBonusDisburseDialogOpen(false)
+      fetchBonusData()
+      fetchAdRequests()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mencairkan bonus")
+    } finally {
+      setPayingBonus(false)
     }
   }
 
@@ -573,6 +725,14 @@ export default function StifinDashboard() {
   const selectedPayoutContents = (payoutData?.unpaidItems || [])
     .filter((item) => selectedPayoutItems.includes(item.adRequestId))
     .reduce((sum, item) => sum + item.contentCount, 0)
+
+  const selectedBonusNominal = (bonusData?.unpaidItems || [])
+    .filter((item) => selectedBonusItems.includes(item.promotorResultId))
+    .reduce((sum, item) => sum + item.amount, 0)
+
+  const selectedBonusClients = (bonusData?.unpaidItems || [])
+    .filter((item) => selectedBonusItems.includes(item.promotorResultId))
+    .reduce((sum, item) => sum + item.clientCount, 0)
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -707,6 +867,7 @@ export default function StifinDashboard() {
           <TabsTrigger value="advertiser" className="text-xs font-semibold">Laporan Advertiser</TabsTrigger>
           <TabsTrigger value="top_promotor" className="text-xs font-semibold">Top Promotor</TabsTrigger>
           <TabsTrigger value="gaji_kreator" className="text-xs font-semibold">Gaji Kreator</TabsTrigger>
+          <TabsTrigger value="bonus_advertiser" className="text-xs font-semibold">Bonus Advertiser</TabsTrigger>
         </TabsList>
 
         {/* ── Tab 1: Semua Pengajuan ─────────────────────────────────────────── */}
@@ -1611,7 +1772,7 @@ export default function StifinDashboard() {
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                         <p className="font-medium text-sm">
-                          Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
+                          {batch.invoiceNumber || "-"} | Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
                         </p>
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-sm text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
@@ -1636,6 +1797,170 @@ export default function StifinDashboard() {
                             {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
                           </p>
                           <p className="text-muted-foreground">{item.contentCount} konten • {formatRupiah(item.requestAmount)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bonus_advertiser" className="space-y-4 mt-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Pencairan Bonus Advertiser</h2>
+            <p className="text-xs text-muted-foreground">
+              Bonus dihitung dari laporan promotor berstatus VALID (Rp25.000 per klien).
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Belum Dicairkan</CardTitle>
+                <Wallet className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">
+                  {formatRupiah(bonusData?.unpaidSummary.totalAmount || 0)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(bonusData?.unpaidSummary.totalItems || 0).toLocaleString("id-ID")} item
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Terpilih Dicairkan</CardTitle>
+                <ReceiptText className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatRupiah(selectedBonusNominal)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedBonusItems.length} item • {selectedBonusClients.toLocaleString("id-ID")} klien
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sudah Dicairkan</CardTitle>
+                <DollarSign className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-emerald-600">
+                  {formatRupiah((bonusData?.paidBatches || []).reduce((sum, b) => sum + b.totalAmount, 0))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(bonusData?.paidBatches || []).length} invoice
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base">Daftar Item Bonus Belum Dicairkan</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">Pilih satu atau beberapa item bonus untuk dicairkan.</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleOpenBonusDisburseDialog}
+                disabled={payingBonus || selectedBonusItems.length === 0}
+              >
+                {payingBonus ? "Memproses..." : "Bayar Bonus Terpilih"}
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {bonusLoading ? (
+                <p className="text-sm text-muted-foreground">Memuat data bonus...</p>
+              ) : (bonusData?.unpaidItems.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Tidak ada item bonus yang menunggu pencairan.</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between pb-1">
+                    <button
+                      className="text-xs text-blue-600 hover:underline"
+                      onClick={() =>
+                        setSelectedBonusItems((prev) =>
+                          prev.length === (bonusData?.unpaidItems.length || 0)
+                            ? []
+                            : (bonusData?.unpaidItems || []).map((i) => i.promotorResultId)
+                        )
+                      }
+                    >
+                      {selectedBonusItems.length === (bonusData?.unpaidItems.length || 0)
+                        ? "Batalkan pilih semua"
+                        : "Pilih semua"}
+                    </button>
+                    <span className="text-xs text-muted-foreground">{selectedBonusItems.length} item dipilih</span>
+                  </div>
+                  {(bonusData?.unpaidItems || []).map((item) => (
+                    <label key={item.promotorResultId} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedBonusItems.includes(item.promotorResultId)}
+                        onChange={() => toggleBonusItem(item.promotorResultId)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                          <p className="font-medium text-sm">
+                            {item.promotorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
+                          </p>
+                          <p className="font-semibold text-sm">{formatRupiah(item.amount)}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{item.clientCount.toLocaleString("id-ID")} klien valid</p>
+                      </div>
+                    </label>
+                  ))}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Riwayat Invoice Bonus</CardTitle>
+              <p className="text-xs text-muted-foreground">Klik invoice untuk melihat detail item bonus.</p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(bonusData?.paidBatches.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada invoice bonus.</p>
+              ) : (
+                (bonusData?.paidBatches || []).map((batch) => (
+                  <details key={batch.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <p className="font-medium text-sm">
+                          {batch.invoiceNumber || "-"} | Pencairan {formatDate(batch.payoutDate)} | {batch.totalClients.toLocaleString("id-ID")} klien | {batch.promotorLabel || batch.promotorName}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {batch.transferProofUrl && (
+                        <a
+                          href={batch.transferProofUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block text-xs text-blue-600 hover:underline"
+                        >
+                          Lihat bukti transfer
+                        </a>
+                      )}
+                      {batch.items.map((item) => (
+                        <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                          <p className="font-medium">
+                            {item.promotorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
+                          </p>
+                          <p className="text-muted-foreground">{item.clientCount.toLocaleString("id-ID")} klien • {formatRupiah(item.bonusAmount)}</p>
                         </div>
                       ))}
                     </div>
@@ -1702,6 +2027,66 @@ export default function StifinDashboard() {
               disabled={payingPayout || proofUploading || !transferProofUrl}
             >
               {payingPayout ? "Memproses..." : "Konfirmasi Bayar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bonusDisburseDialogOpen} onOpenChange={setBonusDisburseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Pencairan Bonus Advertiser</DialogTitle>
+            <DialogDescription>
+              Pastikan nominal transfer bonus dan bukti transfer sudah sesuai sebelum mencairkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-md border bg-slate-50 p-3 text-sm">
+              <p className="font-medium">
+                Total transfer: {formatRupiah(selectedBonusNominal)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {selectedBonusItems.length} item • {selectedBonusClients.toLocaleString("id-ID")} klien
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Upload bukti transfer bonus</p>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => handleUploadBonusTransferProof(e.target.files?.[0] || null)}
+              />
+              {bonusProofUploading && (
+                <p className="text-xs text-muted-foreground">Mengunggah bukti transfer bonus...</p>
+              )}
+              {bonusTransferProofUrl && (
+                <a
+                  href={bonusTransferProofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Bukti transfer bonus berhasil diunggah, klik untuk lihat
+                </a>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBonusDisburseDialogOpen(false)}
+              disabled={payingBonus}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleDisburseSelectedBonus}
+              disabled={payingBonus || bonusProofUploading || !bonusTransferProofUrl}
+            >
+              {payingBonus ? "Memproses..." : "Konfirmasi Bayar Bonus"}
             </Button>
           </DialogFooter>
         </DialogContent>

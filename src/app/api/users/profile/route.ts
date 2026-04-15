@@ -9,7 +9,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { name, phone } = await req.json()
+    const { name, phone, city } = await req.json()
 
     if (!name) {
       return NextResponse.json({ error: "Nama wajib diisi" }, { status: 400 })
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
       data: {
         name,
         phone: phone || null,
+        city: city || null,
       },
     })
 
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
         email: updated.email,
         role: updated.role,
         phone: updated.phone,
+        city: updated.city,
       }
     })
   } catch (error) {

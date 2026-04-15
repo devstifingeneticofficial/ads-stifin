@@ -18,7 +18,6 @@ import {
   Download,
   Upload,
   ExternalLink,
-  MoreVertical,
   CheckCircle,
   AlertCircle,
   Megaphone,
@@ -53,12 +52,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +101,7 @@ interface AdRequest {
 
 interface PayoutBatchMonitor {
   id: string
+  invoiceNumber?: string
   creatorName: string
   payoutDate: string
   totalRequests: number
@@ -141,6 +135,70 @@ interface PayoutMonitorData {
     contentCount: number
   }>
   paidBatches: PayoutBatchMonitor[]
+}
+
+interface BonusBatchMonitor {
+  id: string
+  invoiceNumber?: string
+  promotorName: string
+  promotorLabel?: string
+  payoutDate: string
+  totalItems: number
+  totalClients: number
+  totalAmount: number
+  transferProofUrl?: string | null
+  items: Array<{
+    id: string
+    promotorName: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    clientCount: number
+    bonusAmount: number
+  }>
+}
+
+interface BonusMonitorData {
+  unpaidSummary: {
+    totalItems: number
+    totalClients: number
+    totalAmount: number
+  }
+  unpaidItems: Array<{
+    promotorResultId: string
+    adRequestId: string
+    promotorName: string
+    city: string
+    startDate: string
+    testEndDate: string | null
+    clientCount: number
+    amount: number
+  }>
+  paidBatches: BonusBatchMonitor[]
+}
+
+interface ManagedUser {
+  id: string
+  name: string
+  email: string
+  role: string
+  city: string | null
+  phone: string | null
+  canToggle: boolean
+  isEnabled: boolean
+}
+
+interface GlobalAnnouncement {
+  id: string
+  title: string
+  message: string
+  variant: "info" | "success" | "warning" | "danger"
+  priority: "pinned" | "high" | "normal"
+  isActive: boolean
+  startsAt: string | null
+  endsAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -197,6 +255,18 @@ const formatToDateTimeLocal = (date: Date) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
+const toDateTimeLocalInput = (value: string | null) => {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  const hh = String(date.getHours()).padStart(2, "0")
+  const mi = String(date.getMinutes()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
+}
+
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
   MENUNGGU_PEMBAYARAN: { label: "Menunggu Pembayaran", variant: "outline", className: "border-amber-500 text-amber-700 bg-amber-50" },
   MENUNGGU_KONTEN: { label: "Menunggu Konten", variant: "outline", className: "border-orange-500 text-orange-700 bg-orange-50" },
@@ -215,6 +285,22 @@ const getStatusBadge = (status: string) => {
       {config.label}
     </Badge>
   )
+}
+
+const getRoleLabel = (role: string) => {
+  if (role === "PROMOTOR") return "Promotor"
+  if (role === "KONTEN_KREATOR") return "Kreator"
+  if (role === "ADVERTISER") return "Advertiser"
+  if (role === "STIFIN") return "Admin STIFIn"
+  return role
+}
+
+const getRoleBadgeClass = (role: string) => {
+  if (role === "PROMOTOR") return "bg-amber-100 text-amber-800 border-amber-200"
+  if (role === "KONTEN_KREATOR") return "bg-emerald-100 text-emerald-800 border-emerald-200"
+  if (role === "ADVERTISER") return "bg-blue-100 text-blue-800 border-blue-200"
+  if (role === "STIFIN") return "bg-rose-100 text-rose-800 border-rose-200"
+  return "bg-slate-100 text-slate-700 border-slate-200"
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -250,6 +336,21 @@ export default function AdvertiserDashboard() {
   const [inputTotalLeads, setInputTotalLeads] = useState("")
   const [inputCPR, setInputCPR] = useState("")
   const [payoutMonitor, setPayoutMonitor] = useState<PayoutMonitorData | null>(null)
+  const [bonusMonitor, setBonusMonitor] = useState<BonusMonitorData | null>(null)
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [announcements, setAnnouncements] = useState<GlobalAnnouncement[]>([])
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false)
+  const [announcementDialogOpen, setAnnouncementDialogOpen] = useState(false)
+  const [editingAnnouncement, setEditingAnnouncement] = useState<GlobalAnnouncement | null>(null)
+  const [announcementTitle, setAnnouncementTitle] = useState("")
+  const [announcementMessage, setAnnouncementMessage] = useState("")
+  const [announcementVariant, setAnnouncementVariant] = useState<"info" | "success" | "warning" | "danger">("info")
+  const [announcementPriority, setAnnouncementPriority] = useState<"pinned" | "high" | "normal">("normal")
+  const [announcementIsActive, setAnnouncementIsActive] = useState(true)
+  const [announcementStartsAt, setAnnouncementStartsAt] = useState("")
+  const [announcementEndsAt, setAnnouncementEndsAt] = useState("")
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorStats = (adRequests: AdRequest[]) => {
@@ -352,6 +453,45 @@ export default function AdvertiserDashboard() {
     }
   }, [])
 
+  const fetchBonusMonitor = useCallback(async () => {
+    try {
+      const res = await fetch("/api/advertiser-bonuses")
+      if (!res.ok) throw new Error("Gagal mengambil data bonus")
+      const data: BonusMonitorData = await res.json()
+      setBonusMonitor(data)
+    } catch {
+      // silent fail
+    }
+  }, [])
+
+  const fetchManagedUsers = useCallback(async () => {
+    setUsersLoading(true)
+    try {
+      const res = await fetch("/api/users/manage")
+      if (!res.ok) throw new Error("Gagal mengambil daftar user")
+      const data = await res.json()
+      setManagedUsers(data.users || [])
+    } catch {
+      // silent fail
+    } finally {
+      setUsersLoading(false)
+    }
+  }, [])
+
+  const fetchAnnouncements = useCallback(async () => {
+    setAnnouncementsLoading(true)
+    try {
+      const res = await fetch("/api/announcements")
+      if (!res.ok) throw new Error("Gagal mengambil pengumuman")
+      const data = await res.json()
+      setAnnouncements(data.announcements || [])
+    } catch {
+      // silent fail
+    } finally {
+      setAnnouncementsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchAdRequests()
@@ -359,8 +499,11 @@ export default function AdvertiserDashboard() {
       fetchNotifTemplates()
       fetchWaChannelLink()
       fetchPayoutMonitor()
+      fetchBonusMonitor()
+      fetchManagedUsers()
+      fetchAnnouncements()
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor])
+  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchAnnouncements])
 
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
@@ -501,8 +644,143 @@ export default function AdvertiserDashboard() {
     finally { setIsSubmitting(false) }
   }
 
+  const handleToggleManagedUser = async (userId: string, nextEnabled: boolean) => {
+    setUpdatingUserId(userId)
+    try {
+      const res = await fetch("/api/users/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, isEnabled: nextEnabled }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Gagal memperbarui status user")
+      }
+      setManagedUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, isEnabled: nextEnabled } : u))
+      )
+      toast.success(`Status user berhasil diubah menjadi ${nextEnabled ? "ON" : "OFF"}`)
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal memperbarui status user")
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
+  const openCreateAnnouncementDialog = () => {
+    setEditingAnnouncement(null)
+    setAnnouncementTitle("")
+    setAnnouncementMessage("")
+    setAnnouncementVariant("info")
+    setAnnouncementPriority("normal")
+    setAnnouncementIsActive(true)
+    setAnnouncementStartsAt("")
+    setAnnouncementEndsAt("")
+    setAnnouncementDialogOpen(true)
+  }
+
+  const openEditAnnouncementDialog = (item: GlobalAnnouncement) => {
+    setEditingAnnouncement(item)
+    setAnnouncementTitle(item.title)
+    setAnnouncementMessage(item.message)
+    setAnnouncementVariant(item.variant)
+    setAnnouncementPriority(item.priority || "normal")
+    setAnnouncementIsActive(item.isActive)
+    setAnnouncementStartsAt(toDateTimeLocalInput(item.startsAt))
+    setAnnouncementEndsAt(toDateTimeLocalInput(item.endsAt))
+    setAnnouncementDialogOpen(true)
+  }
+
+  const handleSaveAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    try {
+      const startsAtIso = announcementStartsAt ? new Date(announcementStartsAt).toISOString() : null
+      const endsAtIso = announcementEndsAt ? new Date(announcementEndsAt).toISOString() : null
+
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingAnnouncement?.id,
+          title: announcementTitle,
+          message: announcementMessage,
+          variant: announcementVariant,
+          priority: announcementPriority,
+          isActive: announcementIsActive,
+          startsAt: startsAtIso,
+          endsAt: endsAtIso,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menyimpan pengumuman")
+
+      toast.success(editingAnnouncement ? "Pengumuman berhasil diperbarui" : "Pengumuman berhasil dibuat")
+      setAnnouncementDialogOpen(false)
+      fetchAnnouncements()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menyimpan pengumuman")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    if (!confirm("Hapus pengumuman ini?")) return
+    setIsSubmitting(true)
+    try {
+      const res = await fetch(`/api/announcements?id=${id}`, { method: "DELETE" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menghapus pengumuman")
+      toast.success("Pengumuman berhasil dihapus")
+      fetchAnnouncements()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menghapus pengumuman")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleToggleAnnouncement = async (item: GlobalAnnouncement, nextActive: boolean) => {
+    setIsSubmitting(true)
+    try {
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: item.id,
+          title: item.title,
+          message: item.message,
+          variant: item.variant,
+          priority: item.priority,
+          isActive: nextActive,
+          startsAt: item.startsAt,
+          endsAt: item.endsAt,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal mengubah status pengumuman")
+      setAnnouncements((prev) => prev.map((a) => (a.id === item.id ? { ...a, isActive: nextActive } : a)))
+      toast.success(`Pengumuman ${nextActive ? "diaktifkan" : "dinonaktifkan"}`)
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mengubah status pengumuman")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
   const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
+  const statusCounts = {
+    all: adRequests.length,
+    MENUNGGU_PEMBAYARAN: adRequests.filter((r) => r.status === "MENUNGGU_PEMBAYARAN").length,
+    MENUNGGU_KONTEN: adRequests.filter((r) => r.status === "MENUNGGU_KONTEN").length,
+    KONTEN_SELESAI: adRequests.filter((r) => r.status === "KONTEN_SELESAI").length,
+    IKLAN_DIJADWALKAN: adRequests.filter((r) => r.status === "IKLAN_DIJADWALKAN").length,
+    IKLAN_BERJALAN: adRequests.filter((r) => r.status === "IKLAN_BERJALAN").length,
+    SELESAI: adRequests.filter((r) => r.status === "SELESAI").length,
+    FINAL: adRequests.filter((r) => r.status === "FINAL").length,
+  }
 
   const filteredRequests = statusTab === "all"
     ? adRequests
@@ -560,8 +838,11 @@ export default function AdvertiserDashboard() {
           <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
+          <TabsTrigger value="alerts" className="gap-2 text-xs sm:text-sm"><AlertCircle className="h-4 w-4" /> Alert Center</TabsTrigger>
           <TabsTrigger value="payouts" className="gap-2 text-xs sm:text-sm"><Wallet className="h-4 w-4" /> Pencairan Kreator</TabsTrigger>
+          <TabsTrigger value="bonus_payouts" className="gap-2 text-xs sm:text-sm"><DollarSign className="h-4 w-4" /> Bonus Advertiser</TabsTrigger>
           <TabsTrigger value="promotors" className="gap-2 text-xs sm:text-sm"><Users className="h-4 w-4" /> Promotor</TabsTrigger>
+          <TabsTrigger value="users" className="gap-2 text-xs sm:text-sm"><Users className="h-4 w-4" /> User</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -575,14 +856,38 @@ export default function AdvertiserDashboard() {
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
               <TabsList className="w-full bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
-                <TabsTrigger value="all" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Semua</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Pembayaran</TabsTrigger>
-                <TabsTrigger value="MENUNGGU_KONTEN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Menunggu Konten</TabsTrigger>
-                <TabsTrigger value="KONTEN_SELESAI" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Konten Selesai</TabsTrigger>
-                <TabsTrigger value="IKLAN_DIJADWALKAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Dijadwalkan</TabsTrigger>
-                <TabsTrigger value="IKLAN_BERJALAN" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Berjalan</TabsTrigger>
-                <TabsTrigger value="SELESAI" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Selesai</TabsTrigger>
-                <TabsTrigger value="FINAL" className="text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">Iklan Final</TabsTrigger>
+                <TabsTrigger value="all" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Semua
+                  {statusCounts.all > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white font-bold">{statusCounts.all}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="MENUNGGU_PEMBAYARAN" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Menunggu Pembayaran
+                  {statusCounts.MENUNGGU_PEMBAYARAN > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold">{statusCounts.MENUNGGU_PEMBAYARAN}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="MENUNGGU_KONTEN" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Menunggu Konten
+                  {statusCounts.MENUNGGU_KONTEN > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-orange-500 text-[9px] text-white font-bold">{statusCounts.MENUNGGU_KONTEN}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="KONTEN_SELESAI" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Konten Selesai
+                  {statusCounts.KONTEN_SELESAI > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-500 text-[9px] text-white font-bold">{statusCounts.KONTEN_SELESAI}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="IKLAN_DIJADWALKAN" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Iklan Dijadwalkan
+                  {statusCounts.IKLAN_DIJADWALKAN > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-blue-500 text-[9px] text-white font-bold">{statusCounts.IKLAN_DIJADWALKAN}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="IKLAN_BERJALAN" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Iklan Berjalan
+                  {statusCounts.IKLAN_BERJALAN > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-violet-500 text-[9px] text-white font-bold">{statusCounts.IKLAN_BERJALAN}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="SELESAI" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Selesai
+                  {statusCounts.SELESAI > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-500 text-[9px] text-white font-bold">{statusCounts.SELESAI}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="FINAL" className="relative text-[11px] sm:text-xs h-8 px-2 sm:px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md">
+                  Iklan Final
+                  {statusCounts.FINAL > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white font-bold">{statusCounts.FINAL}</span>}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
 
@@ -684,16 +989,6 @@ export default function AdvertiserDashboard() {
                             </Button>
                           )}
 
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0"><MoreVertical className="h-4 w-4" /></Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="font-medium text-xs">
-                              <DropdownMenuItem asChild>
-                                <a href={`/api/ad-requests/${ad.id}/report/download`} target="_blank" className="flex items-center gap-2"><Download className="h-4 w-4" /> Export Report (PDF)</a>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </div>
                       </div>
                     </CardContent>
@@ -782,7 +1077,8 @@ export default function AdvertiserDashboard() {
               { slug: "content-finished-promotor", name: "Konten Selesai (Promotor)", desc: "Video siap diunduh", default: "Halo *{promotor}*, Konten iklan *{city}* sudah selesai! Silakan cek dashboard." },
               { slug: "ad-scheduled-promotor", name: "Iklan Dijadwalkan (Promotor)", desc: "Tanggal tayang diputuskan", default: "Kabar gembira *{promotor}*! Iklan *{city}* telah dijadwalkan tayang." },
               { slug: "client-report-stifin", name: "Laporan Klien (Admin STIFIn)", desc: "Laporan harian leads", default: "Admin: *{promotor}* melaporkan *{jumlah}* klien untuk iklan *{city}*." },
-              { slug: "salary-disbursed-creator", name: "Gaji Cair (Konten Kreator)", desc: "Dikirim saat admin mencairkan gaji kreator", default: "Halo *{creator}*, gaji Anda telah dicairkan pada *{tanggal}*. Total *{jumlah_konten} konten* dari *{jumlah_request} request* dengan nominal *{nominal}*." },
+              { slug: "salary-disbursed-creator", name: "Gaji Cair (Konten Kreator)", desc: "Dikirim saat admin mencairkan gaji kreator", default: "Halo *{creator}*, gaji Anda telah dicairkan pada *{tanggal}*. Invoice: *{invoice}*. Total *{jumlah_konten} konten* dari *{jumlah_request} request* dengan nominal *{nominal}*." },
+              { slug: "bonus-disbursed-advertiser", name: "Bonus Cair (Advertiser)", desc: "Dikirim saat admin mencairkan bonus advertiser", default: "Halo *{advertiser}*, bonus telah dicairkan pada *{tanggal}*. Invoice: *{invoice}*. Total *{nominal}* untuk *{jumlah_klien} klien* (*{jumlah_item} item*) dari *{promotor}*." },
             ].map((tpl) => {
               const current = notifTemplates.find(t => t.slug === tpl.slug)
               const isActive = current ? current.isActive : true
@@ -811,10 +1107,94 @@ export default function AdvertiserDashboard() {
           </div>
         </TabsContent>
 
+        <TabsContent value="alerts" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Global Alert Center</h2>
+              <p className="text-xs text-muted-foreground">Kelola banner pengumuman global untuk semua user aplikasi.</p>
+            </div>
+            <Button size="sm" className="font-semibold h-9 gap-2" onClick={openCreateAnnouncementDialog}>
+              <Plus className="h-4 w-4" /> Buat Pengumuman
+            </Button>
+          </div>
+
+          <Card className="shadow-none border-slate-100">
+            <CardContent className="p-4 space-y-3">
+              {announcementsLoading ? (
+                <>
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </>
+              ) : announcements.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada pengumuman global.</p>
+              ) : (
+                announcements.map((item) => (
+                  <div key={item.id} className="rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                          <Badge
+                            variant="outline"
+                            className={
+                              item.variant === "warning"
+                                ? "border-amber-200 text-amber-700 bg-amber-50"
+                                : item.variant === "danger"
+                                  ? "border-rose-200 text-rose-700 bg-rose-50"
+                                  : item.variant === "success"
+                                    ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+                                    : "border-blue-200 text-blue-700 bg-blue-50"
+                            }
+                          >
+                            {item.variant.toUpperCase()}
+                          </Badge>
+                          <Badge variant="outline" className={item.isActive ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-600 bg-slate-50"}>
+                            {item.isActive ? "Aktif" : "Nonaktif"}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className={
+                              item.priority === "pinned"
+                                ? "border-fuchsia-200 text-fuchsia-700 bg-fuchsia-50"
+                                : item.priority === "high"
+                                  ? "border-rose-200 text-rose-700 bg-rose-50"
+                                  : "border-slate-200 text-slate-600 bg-slate-50"
+                            }
+                          >
+                            {item.priority === "pinned" ? "PINNED" : item.priority === "high" ? "HIGH" : "NORMAL"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-700 mt-1 whitespace-pre-wrap">{item.message}</p>
+                        <p className="text-[11px] text-muted-foreground mt-2">
+                          Mulai: {item.startsAt ? formatDate(item.startsAt) : "-"} • Berakhir: {item.endsAt ? formatDate(item.endsAt) : "-"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Switch
+                          checked={item.isActive}
+                          onCheckedChange={(checked) => handleToggleAnnouncement(item, checked)}
+                          className="data-[state=checked]:bg-emerald-500"
+                          disabled={isSubmitting}
+                        />
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openEditAnnouncementDialog(item)}>
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 text-xs text-rose-600 border-rose-200" onClick={() => handleDeleteAnnouncement(item.id)}>
+                          Hapus
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="payouts" className="space-y-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold">Monitoring Pencairan Gaji Kreator</h2>
-            <p className="text-xs text-muted-foreground">Pantau item yang belum cair dan invoice yang sudah dicairkan admin STIFIn.</p>
+            <h2 className="text-lg font-semibold">Monitoring Pencairan</h2>
+            <p className="text-xs text-muted-foreground">Pantau gaji kreator dan bonus advertiser yang belum/sudah dicairkan admin STIFIn.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -893,7 +1273,124 @@ export default function AdvertiserDashboard() {
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                         <p className="text-sm font-medium">
-                          Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
+                          {batch.invoiceNumber || "-"} | Pencairan {formatDate(batch.payoutDate)} | {batch.totalContents} konten | {batch.creatorName}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {batch.transferProofUrl && (
+                        <a
+                          href={batch.transferProofUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-block text-xs text-blue-600 hover:underline"
+                        >
+                          Lihat bukti transfer
+                        </a>
+                      )}
+                      {batch.items.map((item) => (
+                        <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
+                          <p className="font-medium">
+                            {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                          </p>
+                          <p className="text-muted-foreground">{item.contentCount} konten • {formatRupiah(item.requestAmount)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="bonus_payouts" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Monitoring Bonus Advertiser</h2>
+            <p className="text-xs text-muted-foreground">Pantau bonus belum cair dan riwayat bonus yang sudah dicairkan admin STIFIn.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Belum Dicairkan</CardTitle>
+                <Wallet className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-orange-600">
+                  {formatRupiah(bonusMonitor?.unpaidSummary.totalAmount || 0)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(bonusMonitor?.unpaidSummary.totalItems || 0)} item
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Klien Belum Cair</CardTitle>
+                <Users className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-blue-600">
+                  {(bonusMonitor?.unpaidSummary.totalClients || 0).toLocaleString("id-ID")}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Total klien valid</p>
+              </CardContent>
+            </Card>
+            <Card className="shadow-none border-slate-100">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Sudah Dicairkan</CardTitle>
+                <ReceiptText className="h-4 w-4 text-emerald-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-semibold text-emerald-600">
+                  {formatRupiah((bonusMonitor?.paidBatches || []).reduce((sum, b) => sum + b.totalAmount, 0))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(bonusMonitor?.paidBatches || []).length} invoice
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="shadow-none border-slate-100">
+            <CardHeader>
+              <CardTitle className="text-base">Invoice Bonus</CardTitle>
+              <CardDescription>Klik invoice untuk melihat rincian item bonus yang dibayar.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="space-y-2 pb-4 border-b border-slate-100">
+                <p className="text-sm font-semibold">Daftar Bonus Belum Dicairkan</p>
+                {(bonusMonitor?.unpaidItems.length || 0) === 0 ? (
+                  <p className="text-sm text-muted-foreground">Tidak ada item bonus belum dicairkan.</p>
+                ) : (
+                  (bonusMonitor?.unpaidItems || []).map((item) => (
+                    <div key={item.promotorResultId} className="rounded-md bg-slate-50 p-2 text-xs">
+                      <p className="font-medium">
+                        {item.promotorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {item.clientCount.toLocaleString("id-ID")} klien • {formatRupiah(item.amount)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <p className="text-sm font-semibold pt-2">Riwayat Invoice Bonus Dicairkan</p>
+              {(bonusMonitor?.paidBatches.length || 0) === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada invoice bonus.</p>
+              ) : (
+                (bonusMonitor?.paidBatches || []).map((batch) => (
+                  <details key={batch.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <p className="text-sm font-medium">
+                          {batch.invoiceNumber || "-"} | Pencairan {formatDate(batch.payoutDate)} | {batch.totalClients.toLocaleString("id-ID")} klien | {batch.promotorLabel || batch.promotorName}
                         </p>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-emerald-700">{formatRupiah(batch.totalAmount)}</p>
@@ -905,9 +1402,9 @@ export default function AdvertiserDashboard() {
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
                           <p className="font-medium">
-                            {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
+                            {item.promotorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
                           </p>
-                          <p className="text-muted-foreground">{item.contentCount} konten • {formatRupiah(item.requestAmount)}</p>
+                          <p className="text-muted-foreground">{item.clientCount.toLocaleString("id-ID")} klien • {formatRupiah(item.bonusAmount)}</p>
                         </div>
                       ))}
                     </div>
@@ -1059,9 +1556,138 @@ export default function AdvertiserDashboard() {
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="users" className="space-y-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold">Manajemen User</h2>
+            <p className="text-xs text-muted-foreground">
+              Daftar user aplikasi. Tombol ON/OFF hanya untuk role Kreator dan Admin STIFIn.
+            </p>
+          </div>
+
+          <Card className="shadow-none border-slate-100 overflow-hidden">
+            <CardContent className="p-0">
+              {usersLoading ? (
+                <div className="p-4 space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : managedUsers.length === 0 ? (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Belum ada user.
+                </div>
+              ) : (
+                <ScrollArea className="max-h-[620px]">
+                  <div className="divide-y">
+                    {managedUsers.map((appUser) => (
+                      <div key={appUser.id} className="p-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-sm text-slate-900 truncate">{appUser.name}</p>
+                            <Badge variant="outline" className={getRoleBadgeClass(appUser.role)}>
+                              {getRoleLabel(appUser.role)}
+                            </Badge>
+                            {appUser.canToggle && (
+                              <Badge variant="outline" className={appUser.isEnabled ? "border-emerald-200 text-emerald-700 bg-emerald-50" : "border-slate-200 text-slate-600 bg-slate-50"}>
+                                {appUser.isEnabled ? "ON" : "OFF"}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">{appUser.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {appUser.city || "-"} • {appUser.phone || "-"}
+                          </p>
+                        </div>
+                        {appUser.canToggle ? (
+                          <Switch
+                            checked={appUser.isEnabled}
+                            onCheckedChange={(checked) => handleToggleManagedUser(appUser.id, checked)}
+                            disabled={updatingUserId === appUser.id}
+                            className="data-[state=checked]:bg-emerald-500"
+                          />
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">Tidak bisa diubah</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Unified Dialogs (Promotor Style) */}
+      <Dialog open={announcementDialogOpen} onOpenChange={setAnnouncementDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <form onSubmit={handleSaveAnnouncement} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="font-semibold text-lg">{editingAnnouncement ? "Edit Pengumuman" : "Buat Pengumuman Global"}</DialogTitle>
+              <DialogDescription className="text-xs">Pengumuman aktif akan muncul sebagai banner di seluruh dashboard user.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Judul</Label>
+                <Input value={announcementTitle} onChange={(e) => setAnnouncementTitle(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Isi Pengumuman</Label>
+                <Textarea
+                  value={announcementMessage}
+                  onChange={(e) => setAnnouncementMessage(e.target.value)}
+                  className="min-h-[120px] bg-slate-50 border-slate-200"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Tipe Banner</Label>
+                <Tabs value={announcementVariant} onValueChange={(v) => setAnnouncementVariant(v as "info" | "success" | "warning" | "danger")}>
+                  <TabsList className="grid grid-cols-4">
+                    <TabsTrigger value="info">Info</TabsTrigger>
+                    <TabsTrigger value="success">Success</TabsTrigger>
+                    <TabsTrigger value="warning">Warning</TabsTrigger>
+                    <TabsTrigger value="danger">Danger</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Prioritas</Label>
+                <Tabs value={announcementPriority} onValueChange={(v) => setAnnouncementPriority(v as "pinned" | "high" | "normal")}>
+                  <TabsList className="grid grid-cols-3">
+                    <TabsTrigger value="pinned">Pinned</TabsTrigger>
+                    <TabsTrigger value="high">High</TabsTrigger>
+                    <TabsTrigger value="normal">Normal</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Mulai Tampil (opsional)</Label>
+                  <Input type="datetime-local" value={announcementStartsAt} onChange={(e) => setAnnouncementStartsAt(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold uppercase text-muted-foreground">Berakhir (opsional)</Label>
+                  <Input type="datetime-local" value={announcementEndsAt} onChange={(e) => setAnnouncementEndsAt(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-semibold">Status Pengumuman</p>
+                  <p className="text-xs text-muted-foreground">Jika OFF, banner tidak akan ditampilkan ke user.</p>
+                </div>
+                <Switch checked={announcementIsActive} onCheckedChange={setAnnouncementIsActive} className="data-[state=checked]:bg-emerald-500" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setAnnouncementDialogOpen(false)}>Batal</Button>
+              <Button type="submit" size="sm" className="font-bold px-8" disabled={isSubmitting}>{isSubmitting ? "Menyimpan..." : "Simpan"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={scheduleDialogOpen} onOpenChange={setScheduleDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSchedule} className="space-y-4">
@@ -1205,3 +1831,4 @@ export default function AdvertiserDashboard() {
     </div>
   )
 }
+

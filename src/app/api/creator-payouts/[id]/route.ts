@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { buildInvoiceNumber } from "@/lib/invoice"
 
 export async function GET(
   _req: Request,
@@ -41,6 +42,7 @@ export async function GET(
 
     return NextResponse.json({
       id: batch.id,
+      invoiceNumber: buildInvoiceNumber("GAJI_KREATOR", batch.id, batch.payoutDate),
       creator: batch.creator,
       payoutDate: batch.payoutDate,
       totalRequests: batch.totalRequests,

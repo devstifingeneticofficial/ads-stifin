@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sendWhatsApp } from "@/lib/whatsapp"
+import { buildInvoiceNumber } from "@/lib/invoice"
 
 const REQUEST_AMOUNT = 20000
 const CONTENTS_PER_REQUEST = 4
@@ -113,16 +114,21 @@ export async function POST(req: Request) {
           year: "numeric",
         })
         const nominalStr = `Rp ${batch.totalAmount.toLocaleString("id-ID")}`
+        const invoiceNumber = buildInvoiceNumber("GAJI_KREATOR", batch.id, batch.payoutDate)
 
-        const defaultMsg = `Halo *${creatorInfo.name}*, gaji konten Anda telah dicairkan pada ${dateStr}. Total: *${nominalStr}* untuk *${batch.totalRequests} request* (${batch.totalContents} konten).`
-        const message = waTemplate
+        const defaultMsg = `Halo *${creatorInfo.name}*, gaji konten Anda telah dicairkan pada ${dateStr}. Invoice: *${invoiceNumber}*. Total: *${nominalStr}* untuk *${batch.totalRequests} request* (${batch.totalContents} konten).`
+        const rawMessage = waTemplate
           ? waTemplate.message
               .replace(/{creator}/g, creatorInfo.name)
               .replace(/{tanggal}/g, dateStr)
+              .replace(/{invoice}/g, invoiceNumber)
               .replace(/{nominal}/g, nominalStr)
               .replace(/{jumlah_request}/g, batch.totalRequests.toString())
               .replace(/{jumlah_konten}/g, batch.totalContents.toString())
           : defaultMsg
+        const message = rawMessage.includes(invoiceNumber)
+          ? rawMessage
+          : `${rawMessage}\nInvoice: *${invoiceNumber}*`
 
         await sendWhatsApp(creatorInfo.phone, message)
       }

@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, Building2, Eye, EyeOff } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { toast } from "sonner"
 
 const demoAccounts = [
   { email: "roy@stifin.com", role: "PROMOTOR", name: "Roy" },
@@ -28,6 +37,14 @@ export function LoginForm() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [registerName, setRegisterName] = useState("")
+  const [registerEmail, setRegisterEmail] = useState("")
+  const [registerPhone, setRegisterPhone] = useState("")
+  const [registerCity, setRegisterCity] = useState("")
+  const [registerPassword, setRegisterPassword] = useState("")
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("")
+  const [registerLoading, setRegisterLoading] = useState(false)
   const { login } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -48,6 +65,55 @@ export function LoginForm() {
     const result = await login(demoEmail, "password123")
     if (!result.success) {
       setError(result.error || "Login gagal")
+    }
+  }
+
+  const resetRegisterForm = () => {
+    setRegisterName("")
+    setRegisterEmail("")
+    setRegisterPhone("")
+    setRegisterCity("")
+    setRegisterPassword("")
+    setRegisterPasswordConfirm("")
+  }
+
+  const handleRegisterPromotor = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (registerPassword !== registerPasswordConfirm) {
+      toast.error("Konfirmasi password tidak sama")
+      return
+    }
+
+    setRegisterLoading(true)
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: registerName,
+          email: registerEmail,
+          password: registerPassword,
+          role: "PROMOTOR",
+          city: registerCity,
+          phone: registerPhone,
+        }),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || "Pendaftaran gagal")
+        return
+      }
+
+      setEmail(registerEmail)
+      setPassword(registerPassword)
+      toast.success("Pendaftaran promotor berhasil. Silakan klik Masuk.")
+      setRegisterOpen(false)
+      resetRegisterForm()
+    } catch {
+      toast.error("Terjadi kesalahan saat mendaftar")
+    } finally {
+      setRegisterLoading(false)
     }
   }
 
@@ -112,9 +178,128 @@ export function LoginForm() {
               <Button type="submit" className="w-full">
                 Masuk
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setRegisterOpen(true)}
+              >
+                Daftar Promotor
+              </Button>
             </form>
           </CardContent>
         </Card>
+
+        <Dialog
+          open={registerOpen}
+          onOpenChange={(open) => {
+            setRegisterOpen(open)
+            if (!open) resetRegisterForm()
+          }}
+        >
+          <DialogContent className="sm:max-w-[440px]">
+            <form onSubmit={handleRegisterPromotor} className="space-y-4">
+              <DialogHeader>
+                <DialogTitle>Daftar Akun Promotor</DialogTitle>
+                <DialogDescription>
+                  Isi data berikut untuk membuat akun promotor baru.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerName">Nama Lengkap</Label>
+                <Input
+                  id="registerName"
+                  value={registerName}
+                  onChange={(e) => setRegisterName(e.target.value)}
+                  placeholder="Masukkan nama lengkap"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerEmail">Email</Label>
+                <Input
+                  id="registerEmail"
+                  type="email"
+                  value={registerEmail}
+                  onChange={(e) => setRegisterEmail(e.target.value)}
+                  placeholder="nama@email.com"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerPhone">Nomor WhatsApp</Label>
+                <Input
+                  id="registerPhone"
+                  value={registerPhone}
+                  onChange={(e) => setRegisterPhone(e.target.value)}
+                  placeholder="08123456789"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerCity">Kota Asal</Label>
+                <Input
+                  id="registerCity"
+                  value={registerCity}
+                  onChange={(e) => setRegisterCity(e.target.value)}
+                  placeholder="Contoh: Bandung"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerPassword">Password</Label>
+                <Input
+                  id="registerPassword"
+                  type="password"
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
+                  placeholder="Minimal 6 karakter"
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="registerPasswordConfirm">Konfirmasi Password</Label>
+                <Input
+                  id="registerPasswordConfirm"
+                  type="password"
+                  value={registerPasswordConfirm}
+                  onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
+                  placeholder="Ulangi password"
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRegisterOpen(false)}
+                  disabled={registerLoading}
+                >
+                  Batal
+                </Button>
+                <Button type="submit" disabled={registerLoading}>
+                  {registerLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Mendaftar...
+                    </>
+                  ) : (
+                    "Daftarkan Akun"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Demo Accounts */}
         <Card>

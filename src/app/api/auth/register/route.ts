@@ -3,9 +3,9 @@ import { db } from "@/lib/db"
 
 export async function POST(req: Request) {
   try {
-    const { email, name, password, role, city } = await req.json()
+    const { email, name, password, role, city, phone } = await req.json()
 
-    if (!email || !name || !password || !role) {
+    if (!email || !name || !password || !role || !phone || !city) {
       return NextResponse.json({ error: "Semua field wajib diisi" }, { status: 400 })
     }
 
@@ -14,13 +14,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email sudah terdaftar" }, { status: 400 })
     }
 
-    const validRoles = ["PROMOTOR", "KONTEN_KREATOR", "ADVERTISER", "STIFIN"]
-    if (!validRoles.includes(role)) {
-      return NextResponse.json({ error: "Role tidak valid" }, { status: 400 })
+    if (role !== "PROMOTOR") {
+      return NextResponse.json({ error: "Pendaftaran mandiri hanya untuk role Promotor" }, { status: 400 })
     }
 
+    const bcrypt = await import("bcryptjs")
+    const hashedPassword = await bcrypt.default.hash(password, 10)
+
     const user = await db.user.create({
-      data: { email, name, password, role, city: city || null },
+      data: {
+        email,
+        name,
+        password: hashedPassword,
+        role,
+        city,
+        phone,
+      },
     })
 
     return NextResponse.json({

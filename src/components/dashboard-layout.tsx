@@ -19,6 +19,7 @@ import {
   X,
   User as UserIcon,
   Users,
+  AlertTriangle,
 } from "lucide-react"
 import {
   Dialog,
@@ -53,19 +54,34 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [notifications, setNotifications] = useState<any[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [showNotif, setShowNotif] = useState(false)
+  const [announcements, setAnnouncements] = useState<any[]>([])
+  const [dismissedAnnouncementIds, setDismissedAnnouncementIds] = useState<string[]>([])
 
   // Profile Edit State
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
   const [editName, setEditName] = useState(user?.name || "")
+  const [editEmail, setEditEmail] = useState(user?.email || "")
   const [editPhone, setEditPhone] = useState(user?.phone || "")
+  const [editCity, setEditCity] = useState(user?.city || "")
   const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
     if (user) {
       setEditName(user.name)
+      setEditEmail(user.email)
       setEditPhone((user as any).phone || "")
+      setEditCity((user as any).city || "")
     }
   }, [user])
+
+  useEffect(() => {
+    if (profileDialogOpen && user) {
+      setEditName(user.name)
+      setEditEmail(user.email)
+      setEditPhone((user as any).phone || "")
+      setEditCity((user as any).city || "")
+    }
+  }, [profileDialogOpen, user])
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,7 +90,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       const res = await fetch("/api/users/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName, phone: editPhone }),
+        body: JSON.stringify({ name: editName, phone: editPhone, city: editCity }),
       })
 
       if (!res.ok) throw new Error("Gagal memperbarui profil")
@@ -119,9 +135,37 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     return () => clearInterval(interval)
   }, [user])
 
+  useEffect(() => {
+    if (!user) return
+
+    const loadAnnouncements = async () => {
+      try {
+        const res = await fetch("/api/announcements")
+        if (!res.ok) return
+        const data = await res.json()
+        setAnnouncements(data.announcements || [])
+      } catch {
+        // silent fail
+      }
+    }
+
+    loadAnnouncements()
+    const interval = setInterval(loadAnnouncements, 30000)
+    return () => clearInterval(interval)
+  }, [user])
+
   const markAsRead = async (id: string) => {
     try {
       await fetch(`/api/notifications/${id}/read`, { method: "POST" })
+      fetchNotifications()
+    } catch {
+      // silent fail
+    }
+  }
+
+  const markAllAsRead = async () => {
+    try {
+      await fetch("/api/notifications/read-all", { method: "POST" })
       fetchNotifications()
     } catch {
       // silent fail
@@ -208,7 +252,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <DialogHeader>
               <DialogTitle>Edit Profil</DialogTitle>
               <DialogDescription>
-                Perbarui nama dan nomor WhatsApp Anda untuk menerima notifikasi.
+                Perbarui data profil Anda.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
@@ -223,6 +267,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 />
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  disabled
+                />
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="phone">Nomor WhatsApp</Label>
                 <Input
                   id="phone"
@@ -233,6 +287,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <p className="text-[10px] text-muted-foreground">
                   Gunakan format angka saja (contoh: 08123456789)
                 </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="city">Kota Asal</Label>
+                <Input
+                  id="city"
+                  value={editCity}
+                  onChange={(e) => setEditCity(e.target.value)}
+                  placeholder="Contoh: Bandung"
+                />
               </div>
             </div>
             <DialogFooter>
@@ -294,9 +357,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     <CardContent className="p-0">
                       <div className="p-3 border-b border-slate-100 flex items-center justify-between">
                         <h3 className="font-semibold text-sm text-slate-900">Notifikasi</h3>
-                        <Badge variant="secondary" className="text-xs">
-                          {unreadCount} baru
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          {unreadCount > 0 && (
+                            <button
+                              onClick={markAllAsRead}
+                              className="text-[10px] text-rose-600 hover:text-rose-700 font-semibold"
+                            >
+                              Tandai semua dibaca
+                            </button>
+                          )}
+                          <Badge variant="secondary" className="text-xs">
+                            {unreadCount} baru
+                          </Badge>
+                        </div>
                       </div>
                       <ScrollArea className="h-72">
                         {notifications.length === 0 ? (
@@ -364,6 +437,49 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Page Content */}
         <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-7xl mx-auto">
+            {announcements
+              .slice()
+              .sort((a, b) => {
+                const rank = (p: string) => (p === "pinned" ? 3 : p === "high" ? 2 : 1)
+                const diff = rank(b.priority) - rank(a.priority)
+                if (diff !== 0) return diff
+                return +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0)
+              })
+              .filter((item) => !dismissedAnnouncementIds.includes(item.id))
+              .map((item) => (
+                <Card
+                  key={item.id}
+                  className={`mb-4 border-l-4 shadow-none ${
+                    item.variant === "warning"
+                      ? "border-l-amber-500 border-amber-200 bg-amber-50"
+                      : item.variant === "danger"
+                        ? "border-l-rose-500 border-rose-200 bg-rose-50"
+                        : item.variant === "success"
+                          ? "border-l-emerald-500 border-emerald-200 bg-emerald-50"
+                          : "border-l-blue-500 border-blue-200 bg-blue-50"
+                  }`}
+                >
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 text-slate-700" />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                          <p className="text-xs text-slate-700 whitespace-pre-wrap">{item.message}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setDismissedAnnouncementIds((prev) => [...prev, item.id])
+                        }
+                        className="text-xs text-slate-500 hover:text-slate-700"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             {children}
           </div>
         </main>

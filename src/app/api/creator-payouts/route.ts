@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { buildInvoiceNumber } from "@/lib/invoice"
 
 const REQUEST_AMOUNT = 20000
 const CONTENTS_PER_REQUEST = 4
@@ -85,6 +86,7 @@ export async function GET() {
       unpaidItems,
       paidBatches: paidBatches.map((batch) => ({
         id: batch.id,
+        invoiceNumber: buildInvoiceNumber("GAJI_KREATOR", batch.id, batch.payoutDate),
         creatorId: batch.creatorId,
         creatorName: batch.creator.name,
         payoutDate: batch.payoutDate,
