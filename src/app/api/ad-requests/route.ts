@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { autoSelectBriefType, generateBriefContent, generateBriefs } from "@/lib/brief-templates"
 import { createNotification, notifyRole, notifyStifin } from "@/lib/notifications"
+import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/lib/user-enabled"
+
+const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
 
 export async function GET(req: Request) {
   try {
@@ -22,12 +25,86 @@ export async function GET(req: Request) {
       where.promotorId = session.id
     }
 
+    if (session.role === "KONTEN_KREATOR" && scope !== "all") {
+      where.contentCreatorId = session.id
+      where.status = { not: "MENUNGGU_PEMBAYARAN" }
+    }
+
     if (city) {
       where.city = { contains: city, mode: "insensitive" }
     }
 
     if (status) {
       where.status = status
+    }
+
+    // Auto-repair legacy data: MENUNGGU_KONTEN without assigned creator
+    // (historically created by old upload-proof flow).
+    const unassignedContentQueue = await db.adRequest.findMany({
+      where: {
+        status: "MENUNGGU_KONTEN",
+        contentCreatorId: null,
+      },
+      include: {
+        promotor: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    })
+
+    if (unassignedContentQueue.length > 0) {
+      for (const legacyAd of unassignedContentQueue) {
+        const assigned = await db.$transaction(async (tx) => {
+          const creators = await tx.user.findMany({
+            where: { role: "KONTEN_KREATOR" },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          })
+          if (creators.length === 0) return null
+
+          const enabledSetting = await tx.systemSetting.findUnique({
+            where: { key: USER_ENABLED_SETTING_KEY },
+          })
+          const enabledMap = parseUserEnabledMap(enabledSetting?.value)
+          const availableCreators = creators.filter((creator) => isUserEnabled(enabledMap, creator.id))
+          if (availableCreators.length === 0) return null
+
+          const rotation = await tx.systemSetting.findUnique({
+            where: { key: CREATOR_ROTATION_KEY },
+          })
+          const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
+          const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
+          const nextIndex = (lastIndex + 1) % availableCreators.length
+          const assignedCreator = availableCreators[nextIndex]
+
+          const updated = await tx.adRequest.updateMany({
+            where: { id: legacyAd.id, contentCreatorId: null },
+            data: { contentCreatorId: assignedCreator.id },
+          })
+
+          if (updated.count === 0) return null
+
+          await tx.systemSetting.upsert({
+            where: { key: CREATOR_ROTATION_KEY },
+            update: { value: String(nextIndex) },
+            create: {
+              key: CREATOR_ROTATION_KEY,
+              value: String(nextIndex),
+            },
+          })
+
+          return assignedCreator
+        })
+
+        if (assigned) {
+          await createNotification(
+            assigned.id,
+            "Pengajuan Iklan Baru",
+            `${legacyAd.promotor.name} dari ${legacyAd.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
+            "AD_REQUEST",
+            legacyAd.id
+          )
+        }
+      }
     }
 
     // Auto-update scheduled ads to running if time is up

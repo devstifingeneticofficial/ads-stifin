@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 import { createToken } from "@/lib/auth"
 import { db } from "@/lib/db"
+import {
+  FORCE_PASSWORD_CHANGE_KEY,
+  mustChangePassword,
+  parseForcePasswordChangeMap,
+} from "@/lib/force-password-change"
 
 export async function POST(req: Request) {
   try {
@@ -29,6 +34,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
     }
 
+    const forceSetting = await db.systemSetting.findUnique({
+      where: { key: FORCE_PASSWORD_CHANGE_KEY },
+    })
+    const forceMap = parseForcePasswordChangeMap(forceSetting?.value)
+    const shouldForcePasswordChange = mustChangePassword(forceMap, user.id)
+
     const token = createToken({
       id: user.id,
       email: user.email,
@@ -45,6 +56,7 @@ export async function POST(req: Request) {
         name: user.name,
         role: user.role,
         city: user.city,
+        mustChangePassword: shouldForcePasswordChange,
       },
     })
 

@@ -278,12 +278,10 @@ export default function KontenKreatorDashboard() {
       const res = await fetch("/api/ad-requests")
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data: AdRequest[] = await res.json()
-      // Konten kreator hanya memproses iklan yang sudah dibayar (minimal MENUNGGU_KONTEN)
+      // Konten kreator hanya melihat request yang memang ditugaskan ke dirinya.
       const filteredData = data.filter((ad) => {
         if (ad.status === "MENUNGGU_PEMBAYARAN") return false
-        if (ad.status === "MENUNGGU_KONTEN") return true
-        if (!ad.contentCreator) return false
-        return ad.contentCreator.id === user?.id
+        return ad.contentCreator?.id === user?.id
       })
       setAdRequests(filteredData)
     } catch {

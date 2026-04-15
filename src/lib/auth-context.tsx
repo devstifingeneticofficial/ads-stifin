@@ -9,6 +9,7 @@ interface User {
   role: string
   city: string | null
   phone: string | null
+  mustChangePassword?: boolean
 }
 
 interface AuthContextType {

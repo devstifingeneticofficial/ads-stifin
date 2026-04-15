@@ -64,6 +64,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [editPhone, setEditPhone] = useState(user?.phone || "")
   const [editCity, setEditCity] = useState(user?.city || "")
   const [isUpdating, setIsUpdating] = useState(false)
+  const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false)
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmNewPassword, setConfirmNewPassword] = useState("")
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -82,6 +86,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       setEditCity((user as any).city || "")
     }
   }, [profileDialogOpen, user])
+
+  useEffect(() => {
+    const shouldForcePasswordChange =
+      !!user &&
+      (user.role === "KONTEN_KREATOR" || user.role === "STIFIN") &&
+      (user as any).mustChangePassword === true
+    setChangePasswordDialogOpen(shouldForcePasswordChange)
+  }, [user])
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -102,6 +114,39 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       toast.error("Terjadi kesalahan saat menyimpan profil")
     } finally {
       setIsUpdating(false)
+    }
+  }
+
+  const handleForcePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newPassword.length < 6) {
+      toast.error("Password minimal 6 karakter")
+      return
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast.error("Konfirmasi password tidak sama")
+      return
+    }
+
+    setIsChangingPassword(true)
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal mengganti password")
+
+      toast.success("Password berhasil diperbarui")
+      setNewPassword("")
+      setConfirmNewPassword("")
+      setChangePasswordDialogOpen(false)
+      if (refreshSession) await refreshSession()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal mengganti password")
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -317,6 +362,57 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0 overflow-x-hidden">
+        <Dialog
+          open={changePasswordDialogOpen}
+          onOpenChange={(open) => {
+            const shouldForcePasswordChange =
+              !!user &&
+              (user.role === "KONTEN_KREATOR" || user.role === "STIFIN") &&
+              (user as any).mustChangePassword === true
+            if (!shouldForcePasswordChange) setChangePasswordDialogOpen(open)
+          }}
+        >
+          <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
+            <form onSubmit={handleForcePasswordChange}>
+              <DialogHeader>
+                <DialogTitle>Ganti Password Pertama Kali</DialogTitle>
+                <DialogDescription>
+                  Demi keamanan akun, Anda wajib mengganti password sebelum melanjutkan.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="newPassword">Password Baru</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={6}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="confirmNewPassword">Konfirmasi Password Baru</Label>
+                  <Input
+                    id="confirmNewPassword"
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={isChangingPassword}>
+                  {isChangingPassword ? "Menyimpan..." : "Simpan Password Baru"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         {/* Top Bar */}
         <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 lg:px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">

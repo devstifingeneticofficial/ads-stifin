@@ -188,6 +188,8 @@ interface ManagedUser {
   isEnabled: boolean
 }
 
+type CreateManagedUserRole = "KONTEN_KREATOR" | "STIFIN"
+
 interface GlobalAnnouncement {
   id: string
   title: string
@@ -340,6 +342,15 @@ export default function AdvertiserDashboard() {
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false)
+  const [createUserLoading, setCreateUserLoading] = useState(false)
+  const [createUserName, setCreateUserName] = useState("")
+  const [createUserEmail, setCreateUserEmail] = useState("")
+  const [createUserPhone, setCreateUserPhone] = useState("")
+  const [createUserCity, setCreateUserCity] = useState("")
+  const [createUserPassword, setCreateUserPassword] = useState("")
+  const [createUserPasswordConfirm, setCreateUserPasswordConfirm] = useState("")
+  const [createUserRole, setCreateUserRole] = useState<CreateManagedUserRole>("KONTEN_KREATOR")
   const [announcements, setAnnouncements] = useState<GlobalAnnouncement[]>([])
   const [announcementsLoading, setAnnouncementsLoading] = useState(false)
   const [announcementDialogOpen, setAnnouncementDialogOpen] = useState(false)
@@ -402,6 +413,9 @@ export default function AdvertiserDashboard() {
   }
 
   const promotorData = promotorStats(adRequests)
+  const creatorUsers = managedUsers.filter((u) => u.role === "KONTEN_KREATOR")
+  const activeCreatorCount = creatorUsers.filter((u) => u.isEnabled).length
+  const inactiveCreatorCount = Math.max(creatorUsers.length - activeCreatorCount, 0)
 
   const fetchAdRequests = useCallback(async () => {
     try {
@@ -664,6 +678,51 @@ export default function AdvertiserDashboard() {
       toast.error(error?.message || "Gagal memperbarui status user")
     } finally {
       setUpdatingUserId(null)
+    }
+  }
+
+  const resetCreateUserForm = () => {
+    setCreateUserName("")
+    setCreateUserEmail("")
+    setCreateUserPhone("")
+    setCreateUserCity("")
+    setCreateUserPassword("")
+    setCreateUserPasswordConfirm("")
+    setCreateUserRole("KONTEN_KREATOR")
+  }
+
+  const handleCreateManagedUser = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (createUserPassword !== createUserPasswordConfirm) {
+      toast.error("Konfirmasi password tidak sama")
+      return
+    }
+
+    setCreateUserLoading(true)
+    try {
+      const res = await fetch("/api/users/manage/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createUserName,
+          email: createUserEmail,
+          phone: createUserPhone,
+          city: createUserCity,
+          password: createUserPassword,
+          role: createUserRole,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menambahkan user")
+
+      toast.success("User baru berhasil ditambahkan")
+      setCreateUserDialogOpen(false)
+      resetCreateUserForm()
+      fetchManagedUsers()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menambahkan user")
+    } finally {
+      setCreateUserLoading(false)
     }
   }
 
@@ -1558,11 +1617,33 @@ export default function AdvertiserDashboard() {
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold">Manajemen User</h2>
-            <p className="text-xs text-muted-foreground">
-              Daftar user aplikasi. Tombol ON/OFF hanya untuk role Kreator dan Admin STIFIn.
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-semibold">Manajemen User</h2>
+              <p className="text-xs text-muted-foreground">
+                Daftar user aplikasi. Tombol ON/OFF hanya untuk role Kreator dan Admin STIFIn.
+              </p>
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
+                <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50">
+                  Kreator Aktif: {activeCreatorCount}
+                </Badge>
+                <Badge variant="outline" className="border-slate-200 text-slate-700 bg-slate-50">
+                  OFF: {inactiveCreatorCount}
+                </Badge>
+                <Badge variant="outline" className="border-blue-200 text-blue-700 bg-blue-50">
+                  Total Kreator: {creatorUsers.length}
+                </Badge>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="font-semibold"
+              onClick={() => setCreateUserDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Tambah User
+            </Button>
           </div>
 
           <Card className="shadow-none border-slate-100 overflow-hidden">
@@ -1683,6 +1764,103 @@ export default function AdvertiserDashboard() {
             <DialogFooter>
               <Button type="button" variant="ghost" size="sm" onClick={() => setAnnouncementDialogOpen(false)}>Batal</Button>
               <Button type="submit" size="sm" className="font-bold px-8" disabled={isSubmitting}>{isSubmitting ? "Menyimpan..." : "Simpan"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createUserDialogOpen}
+        onOpenChange={(open) => {
+          setCreateUserDialogOpen(open)
+          if (!open) resetCreateUserForm()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handleCreateManagedUser} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="font-semibold">Tambah User</DialogTitle>
+              <DialogDescription className="text-xs">
+                Pembuatan akun khusus untuk role Kreator dan Admin STIFIn.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label className="text-[11px] font-bold uppercase text-muted-foreground">Role</Label>
+                <Tabs value={createUserRole} onValueChange={(v) => setCreateUserRole(v as CreateManagedUserRole)}>
+                  <TabsList className="grid grid-cols-2">
+                    <TabsTrigger value="KONTEN_KREATOR">Kreator</TabsTrigger>
+                    <TabsTrigger value="STIFIN">Admin STIFIn</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Nama Lengkap</Label>
+                <Input value={createUserName} onChange={(e) => setCreateUserName(e.target.value)} required />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Email</Label>
+                <Input
+                  type="email"
+                  value={createUserEmail}
+                  onChange={(e) => setCreateUserEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Nomor WhatsApp</Label>
+                <Input
+                  value={createUserPhone}
+                  onChange={(e) => setCreateUserPhone(e.target.value)}
+                  placeholder="08123456789"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Kota Asal</Label>
+                <Input
+                  value={createUserCity}
+                  onChange={(e) => setCreateUserCity(e.target.value)}
+                  placeholder="Contoh: Bandung"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Password</Label>
+                <Input
+                  type="password"
+                  value={createUserPassword}
+                  onChange={(e) => setCreateUserPassword(e.target.value)}
+                  minLength={6}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="font-semibold text-sm">Konfirmasi Password</Label>
+                <Input
+                  type="password"
+                  value={createUserPasswordConfirm}
+                  onChange={(e) => setCreateUserPasswordConfirm(e.target.value)}
+                  minLength={6}
+                  required
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setCreateUserDialogOpen(false)} disabled={createUserLoading}>
+                Batal
+              </Button>
+              <Button type="submit" size="sm" className="font-bold px-8" disabled={createUserLoading}>
+                {createUserLoading ? "Menyimpan..." : "Simpan User"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

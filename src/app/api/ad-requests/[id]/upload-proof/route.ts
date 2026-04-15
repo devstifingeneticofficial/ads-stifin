@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
-import { createNotification } from "@/lib/notifications"
+import { notifyRole } from "@/lib/notifications"
 import { sendWhatsApp } from "@/lib/whatsapp"
 
 export async function POST(
@@ -38,27 +38,22 @@ export async function POST(
       where: { id },
       data: {
         paymentProofUrl,
-        status: "MENUNGGU_KONTEN",
       },
       include: { promotor: true },
     })
 
-    // 1. Notify konten kreator via Dashboard
-    const creators = await db.user.findMany({ where: { role: "KONTEN_KREATOR" } })
-    for (const creator of creators) {
-      await createNotification(
-        creator.id,
-        "Pengajuan Iklan Baru",
-        `${updated.promotor.name} dari ${updated.city} mengajukan iklan baru. Siap diproses!`,
-        "AD_REQUEST",
-        id
-      )
-    }
+    // 1. Notify advertiser: bukti pembayaran sudah diupload, menunggu verifikasi.
+    await notifyRole(
+      "ADVERTISER",
+      "Bukti Pembayaran Masuk",
+      `${updated.promotor.name} dari ${updated.city} sudah upload bukti bayar. Mohon verifikasi pembayaran.`,
+      "PAYMENT_PROOF_UPLOADED",
+      id
+    )
 
     // ── Send WhatsApp Notifications ──────────────────────────────────────────
     
     // Ambil template dari DB
-    const templatePromotor = await db.notificationTemplate.findUnique({ where: { slug: "payment-confirmed-promotor" } })
     const templateAdvertiser = await db.notificationTemplate.findUnique({ where: { slug: "payment-confirmed-advertiser" } })
 
     const replaceVars = (text: string) => {
@@ -66,13 +61,12 @@ export async function POST(
         .replace(/{promotor}/g, updated.promotor.name)
         .replace(/{city}/g, updated.city)
         .replace(/{kota}/g, updated.city)
-        .replace(/{status}/g, "MENUNGGU KONTEN")
+        .replace(/{status}/g, "MENUNGGU VERIFIKASI PEMBAYARAN")
     }
 
-    // 2. WhatsApp to Promotor (Check if active)
-    if (updated.promotor.phone && (!templatePromotor || templatePromotor.isActive)) {
-      const defaultMsg = `Halo *${updated.promotor.name}*, Pembayaran iklan Anda untuk kota *${updated.city}* telah diterima. Status: *MENUNGGU KONTEN*. Terimakasih!`
-      const message = templatePromotor ? replaceVars(templatePromotor.message) : defaultMsg
+    // 2. WhatsApp to Promotor
+    if (updated.promotor.phone) {
+      const message = `Halo *${updated.promotor.name}*, bukti pembayaran iklan untuk kota *${updated.city}* sudah kami terima. Saat ini status: *MENUNGGU VERIFIKASI PEMBAYARAN* oleh Advertiser.`
       await sendWhatsApp(updated.promotor.phone, message)
     }
 
