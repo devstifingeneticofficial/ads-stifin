@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import type { Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
+import { PwaRegister } from "@/components/pwa-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,9 +19,20 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "STIFIn - Sistem Manajemen Iklan & Promotor",
   description: "Sistem manajemen iklan untuk Promotor, Konten Kreator, dan Advertiser STIFIn",
-  icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "STIFIn",
   },
+  icons: {
+    icon: "/pwa-192x192.png",
+    apple: "/pwa-192x192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -33,6 +46,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <Providers>
+          <PwaRegister />
           {children}
           <Toaster position="top-center" richColors closeButton />
         </Providers>

@@ -3,6 +3,10 @@ import bcrypt from "bcryptjs"
 import { cookies } from "next/headers"
 
 const JWT_SECRET = process.env.NEXTAUTH_SECRET || "stifin-secret-key-2025-super-secret"
+const SESSION_MAX_AGE_DAYS = Number(process.env.AUTH_SESSION_DAYS || "180")
+
+export const AUTH_COOKIE_NAME = "auth-token"
+export const AUTH_MAX_AGE_SECONDS = SESSION_MAX_AGE_DAYS * 24 * 60 * 60
 
 export interface JWTPayload {
   id: string
@@ -39,7 +43,7 @@ export async function login(email: string, password: string): Promise<JWTPayload
 }
 
 export function createToken(payload: JWTPayload): string {
-  return jwt.sign({ ...payload }, JWT_SECRET, { expiresIn: "30d" })
+  return jwt.sign({ ...payload }, JWT_SECRET, { expiresIn: `${SESSION_MAX_AGE_DAYS}d` })
 }
 
 export function verifyToken(token: string): JWTPayload | null {
@@ -52,7 +56,7 @@ export function verifyToken(token: string): JWTPayload | null {
 
 export async function getSession(): Promise<JWTPayload | null> {
   const cookieStore = await cookies()
-  const token = cookieStore.get("auth-token")?.value
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value
   if (!token) return null
   return verifyToken(token)
 }

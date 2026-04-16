@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSession } from "@/lib/auth"
+import { AUTH_COOKIE_NAME, AUTH_MAX_AGE_SECONDS, createToken, getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
@@ -39,12 +39,30 @@ export async function GET() {
 
     const forceMap = parseForcePasswordChangeMap(forceSetting?.value)
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       user: {
         ...user,
         mustChangePassword: mustChangePassword(forceMap, user.id),
       },
     })
+
+    const refreshedToken = createToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      city: user.city,
+    })
+
+    response.cookies.set(AUTH_COOKIE_NAME, refreshedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: AUTH_MAX_AGE_SECONDS,
+    })
+
+    return response
   } catch (error) {
     console.error("[SESSION] Error:", error)
     return NextResponse.json({ user: null })

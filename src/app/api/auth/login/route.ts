@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createToken } from "@/lib/auth"
+import { AUTH_COOKIE_NAME, AUTH_MAX_AGE_SECONDS, createToken } from "@/lib/auth"
 import { db } from "@/lib/db"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
@@ -60,12 +60,12 @@ export async function POST(req: Request) {
       },
     })
 
-    response.cookies.set("auth-token", token, {
+    response.cookies.set(AUTH_COOKIE_NAME, token, {
       httpOnly: true,
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 30 * 24 * 60 * 60,
+      maxAge: AUTH_MAX_AGE_SECONDS,
     })
 
     return response
