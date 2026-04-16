@@ -76,4 +76,5 @@ jobs:
 
       - name: Skip sync (no upstream configured)
         if: steps.upstream.outputs.skip == 'true'
-        run: echo "Sync skipped: upstream repository is not configured."
+        run: |
+          echo "Sync skipped: upstream repository is not configured."
