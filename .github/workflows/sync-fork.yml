@@ -36,20 +36,25 @@ jobs:
           fi
 
           if [ -z "$UPSTREAM_REPO" ]; then
-            echo "Missing upstream repository source."
-            echo "Set repository variable UPSTREAM_REPO='<owner>/<repo>' OR make sure this repo is a fork with parent info."
-            exit 1
+            echo "No upstream repository configured/detected."
+            echo "Set repository variable UPSTREAM_REPO='<owner>/<repo>' OR ensure this repo is a fork."
+            echo "repo=" >> "$GITHUB_OUTPUT"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           echo "Using upstream repo: $UPSTREAM_REPO"
           echo "repo=$UPSTREAM_REPO" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Configure Git
+        if: steps.upstream.outputs.skip != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Sync default branch from upstream
+        if: steps.upstream.outputs.skip != 'true'
         env:
           TARGET_BRANCH: ${{ github.event.repository.default_branch }}
           UPSTREAM_REPO: ${{ steps.upstream.outputs.repo }}
@@ -68,3 +73,7 @@ jobs:
           fi
 
           git push origin "$TARGET_BRANCH"
+
+      - name: Skip sync (no upstream configured)
+        if: steps.upstream.outputs.skip == 'true'
+        run: echo "Sync skipped: upstream repository is not configured."
