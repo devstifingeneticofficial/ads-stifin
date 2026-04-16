@@ -5,6 +5,13 @@ import { buildInvoiceNumber } from "@/lib/invoice"
 
 const REQUEST_AMOUNT = 20000
 const CONTENTS_PER_REQUEST = 4
+const PAYOUT_ELIGIBLE_STATUSES = [
+  "KONTEN_SELESAI",
+  "IKLAN_DIJADWALKAN",
+  "IKLAN_BERJALAN",
+  "SELESAI",
+  "FINAL",
+]
 
 export async function GET() {
   try {
@@ -12,13 +19,20 @@ export async function GET() {
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    if (
+      session.role !== "KONTEN_KREATOR" &&
+      session.role !== "STIFIN" &&
+      session.role !== "ADVERTISER"
+    ) {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 })
+    }
 
     const creatorWhere =
       session.role === "KONTEN_KREATOR" ? { contentCreatorId: session.id } : {}
 
     const unpaidItemsRaw = await db.adRequest.findMany({
       where: {
-        status: "KONTEN_SELESAI",
+        status: { in: PAYOUT_ELIGIBLE_STATUSES },
         contentCreatorId: { not: null },
         creatorPayoutItem: null,
         ...creatorWhere,

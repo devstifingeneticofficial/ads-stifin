@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
+import { syncScheduledAdsToRunning } from "@/lib/ad-status"
 
 export async function GET(
   req: Request,
@@ -12,12 +13,28 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    await syncScheduledAdsToRunning()
+
     const { id } = await params
+    const isAdmin = session.role === "ADVERTISER" || session.role === "STIFIN"
+    const isPromotor = session.role === "PROMOTOR"
+    const isCreator = session.role === "KONTEN_KREATOR"
+    if (!isAdmin && !isPromotor && !isCreator) {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 })
+    }
     const adRequest = await db.adRequest.findUnique({
       where: { id },
       include: {
-        promotor: { select: { id: true, name: true, email: true, city: true } },
-        contentCreator: { select: { id: true, name: true, email: true } },
+        promotor: {
+          select: isAdmin
+            ? { id: true, name: true, email: true, city: true, phone: true }
+            : { id: true, name: true, city: true },
+        },
+        contentCreator: {
+          select: isAdmin
+            ? { id: true, name: true, email: true }
+            : { id: true, name: true },
+        },
         adReport: true,
         promotorResult: true,
       },
@@ -25,6 +42,14 @@ export async function GET(
 
     if (!adRequest) {
       return NextResponse.json({ error: "Pengajuan tidak ditemukan" }, { status: 404 })
+    }
+
+    if (isPromotor && adRequest.promotorId !== session.id) {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 })
+    }
+
+    if (isCreator && adRequest.contentCreatorId !== session.id) {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 })
     }
 
     return NextResponse.json(adRequest)

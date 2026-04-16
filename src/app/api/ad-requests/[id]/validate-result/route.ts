@@ -24,15 +24,43 @@ export async function POST(
       return NextResponse.json({ error: "Laporan tidak ditemukan" }, { status: 404 })
     }
 
-    const updatedResult = await db.promotorResult.update({
-      where: { adRequestId: id },
-      data: { status: "VALID" },
+    if (adRequest.status !== "SELESAI") {
+      return NextResponse.json(
+        { error: "Pengajuan harus berstatus SELESAI sebelum divalidasi" },
+        { status: 400 }
+      )
+    }
+
+    if (adRequest.promotorResult.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Laporan sudah divalidasi atau tidak dalam status PENDING" },
+        { status: 400 }
+      )
+    }
+
+    const updatedResult = await db.$transaction(async (tx) => {
+      const resultUpdated = await tx.promotorResult.updateMany({
+        where: { adRequestId: id, status: "PENDING" },
+        data: { status: "VALID" },
+      })
+
+      const adUpdated = await tx.adRequest.updateMany({
+        where: { id, status: "SELESAI" },
+        data: { status: "FINAL" },
+      })
+
+      if (resultUpdated.count === 0 || adUpdated.count === 0) {
+        throw new Error("STATUS_CONFLICT")
+      }
+
+      return tx.promotorResult.findUnique({
+        where: { adRequestId: id },
+      })
     })
 
-    await db.adRequest.update({
-      where: { id },
-      data: { status: "FINAL" },
-    })
+    if (!updatedResult) {
+      return NextResponse.json({ error: "Laporan tidak ditemukan" }, { status: 404 })
+    }
 
     // Notify promotor
     await createNotification(
@@ -45,6 +73,12 @@ export async function POST(
 
     return NextResponse.json(updatedResult)
   } catch (error) {
+    if (error instanceof Error && error.message === "STATUS_CONFLICT") {
+      return NextResponse.json(
+        { error: "Status pengajuan/laporan berubah. Muat ulang data lalu coba lagi." },
+        { status: 409 }
+      )
+    }
     console.error("Validation error:", error)
     return NextResponse.json({ error: "Gagal memvalidasi laporan" }, { status: 500 })
   }

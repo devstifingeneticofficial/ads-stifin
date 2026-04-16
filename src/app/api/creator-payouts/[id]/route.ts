@@ -12,6 +12,13 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    if (
+      session.role !== "KONTEN_KREATOR" &&
+      session.role !== "STIFIN" &&
+      session.role !== "ADVERTISER"
+    ) {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 })
+    }
 
     const { id } = await params
 

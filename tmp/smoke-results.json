@@ -1,0 +1,77 @@
+﻿[
+    {
+        "step":  "Register Promotor",
+        "pass":  true,
+        "detail":  "userId=cmo195vvf000ufiwwsgjem784"
+    },
+    {
+        "step":  "Login 4 role",
+        "pass":  true,
+        "detail":  "promotor/advertiser/creator/stifin login sukses"
+    },
+    {
+        "step":  "Create AdRequest",
+        "pass":  true,
+        "detail":  "adId=cmo195wdt000wfiwwq879ogdq status=MENUNGGU_PEMBAYARAN"
+    },
+    {
+        "step":  "Upload Proof",
+        "pass":  true,
+        "detail":  "status=200"
+    },
+    {
+        "step":  "Verify Payment + Assign Creator",
+        "pass":  true,
+        "detail":  "status=MENUNGGU_KONTEN creator=cmo195u460002fir8xf4svf1x expected=cmo195u460002fir8xf4svf1x"
+    },
+    {
+        "step":  "Creator Process Content",
+        "pass":  true,
+        "detail":  "status=200"
+    },
+    {
+        "step":  "Creator Upload Content",
+        "pass":  true,
+        "detail":  "status=200"
+    },
+    {
+        "step":  "Schedule Ad",
+        "pass":  true,
+        "detail":  "status=200"
+    },
+    {
+        "step":  "Submit Report -\u003e SELESAI",
+        "pass":  true,
+        "detail":  "status=SELESAI"
+    },
+    {
+        "step":  "Promotor Result 0 Client",
+        "pass":  true,
+        "detail":  "status=200 totalClients=0"
+    },
+    {
+        "step":  "STIFIN Validate -\u003e FINAL",
+        "pass":  true,
+        "detail":  "valStatus=200 ad=FINAL"
+    },
+    {
+        "step":  "Creator Payout Queue Includes FINAL",
+        "pass":  true,
+        "detail":  "found=True"
+    },
+    {
+        "step":  "Disburse Creator Payout",
+        "pass":  true,
+        "detail":  "status=200"
+    },
+    {
+        "step":  "Bonus Queue After VALID",
+        "pass":  true,
+        "detail":  "found=True"
+    },
+    {
+        "step":  "Disburse Bonus",
+        "pass":  true,
+        "detail":  "status=200"
+    }
+]

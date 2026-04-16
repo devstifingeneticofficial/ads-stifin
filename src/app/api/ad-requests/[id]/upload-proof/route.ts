@@ -77,7 +77,7 @@ export async function POST(
       })
 
       for (const adv of advertisers) {
-        const defaultMsg = `*NOTIFIKASI PEMBAYARAN*\n\nPromotor *${updated.promotor.name}* telah mengunggah bukti bayar untuk iklan *${updated.city}*.\n\nStatus: Menunggu Konten\nSegera cek dashboard Anda untuk detailnya.`
+        const defaultMsg = `*NOTIFIKASI PEMBAYARAN*\n\nPromotor *${updated.promotor.name}* telah mengunggah bukti bayar untuk iklan *${updated.city}*.\n\nStatus: Menunggu Verifikasi Pembayaran\nSegera cek dashboard Anda untuk detailnya.`
         const message = templateAdvertiser ? replaceVars(templateAdvertiser.message) : defaultMsg
         await sendWhatsApp(adv.phone || "", message)
       }

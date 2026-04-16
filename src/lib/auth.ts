@@ -2,8 +2,13 @@ import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
 import { cookies } from "next/headers"
 
-const JWT_SECRET = process.env.NEXTAUTH_SECRET || "stifin-secret-key-2025-super-secret"
+const DEV_FALLBACK_SECRET = "stifin-dev-secret-key-only-for-local"
+const JWT_SECRET = process.env.NEXTAUTH_SECRET || DEV_FALLBACK_SECRET
 const SESSION_MAX_AGE_DAYS = Number(process.env.AUTH_SESSION_DAYS || "180")
+
+if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
+  throw new Error("NEXTAUTH_SECRET wajib di-set pada production")
+}
 
 export const AUTH_COOKIE_NAME = "auth-token"
 export const AUTH_MAX_AGE_SECONDS = SESSION_MAX_AGE_DAYS * 24 * 60 * 60

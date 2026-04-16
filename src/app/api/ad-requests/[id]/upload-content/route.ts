@@ -38,15 +38,34 @@ export async function POST(
       return NextResponse.json({ error: "Pengajuan ini sedang dikerjakan oleh kreator lain" }, { status: 403 })
     }
 
-    const updated = await db.adRequest.update({
-      where: { id },
+    const completed = await db.adRequest.updateMany({
+      where: {
+        id,
+        status: "DIPROSES",
+        OR: [{ contentCreatorId: null }, { contentCreatorId: session.id }],
+      },
       data: {
         contentUrl,
         status: "KONTEN_SELESAI",
         contentCreatorId: session.id,
       },
+    })
+
+    if (completed.count === 0) {
+      return NextResponse.json(
+        { error: "Pengajuan sudah diubah kreator lain atau status tidak valid" },
+        { status: 409 }
+      )
+    }
+
+    const updated = await db.adRequest.findUnique({
+      where: { id },
       include: { promotor: true },
     })
+
+    if (!updated) {
+      return NextResponse.json({ error: "Pengajuan tidak ditemukan setelah update" }, { status: 404 })
+    }
 
     // ── Notify Dashboard ─────────────────────────────────────────────────────
     

@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { autoSelectBriefType, generateBriefContent, generateBriefs } from "@/lib/brief-templates"
 import { createNotification, notifyRole, notifyStifin } from "@/lib/notifications"
 import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/lib/user-enabled"
+import { syncScheduledAdsToRunning } from "@/lib/ad-status"
 
 const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
 
@@ -18,10 +19,16 @@ export async function GET(req: Request) {
     const city = searchParams.get("city")
     const status = searchParams.get("status")
     const scope = searchParams.get("scope") // "all" for global historical data
+    const isAdmin = session.role === "ADVERTISER" || session.role === "STIFIN"
+    const isPromotorGlobalScope = scope === "all" && session.role === "PROMOTOR"
+
+    if (scope === "all" && !isAdmin && !isPromotorGlobalScope) {
+      return NextResponse.json({ error: "Akses scope global ditolak" }, { status: 403 })
+    }
 
     const where: any = {}
 
-    if (session.role === "PROMOTOR" && scope !== "all") {
+    if (session.role === "PROMOTOR" && !isPromotorGlobalScope) {
       where.promotorId = session.id
     }
 
@@ -107,36 +114,17 @@ export async function GET(req: Request) {
       }
     }
 
-    // Auto-update scheduled ads to running if time is up
-    const scheduledAds = await db.adRequest.findMany({
-      where: {
-        status: "IKLAN_DIJADWALKAN",
-        adStartDate: { lte: new Date() },
-      },
-    })
-
-    if (scheduledAds.length > 0) {
-      for (const ad of scheduledAds) {
-        await db.adRequest.update({
-          where: { id: ad.id },
-          data: { status: "IKLAN_BERJALAN" },
-        })
-        
-        // Notify promotor that ad is now running
-        await createNotification(
-          ad.promotorId,
-          "Iklan Sedang Berjalan",
-          `Iklan Anda untuk ${ad.city} kini telah aktif dan sedang berjalan.`,
-          "AD_RUNNING",
-          ad.id
-        )
-      }
-    }
+    // Keep running-state synchronized even when background scheduler is not available.
+    await syncScheduledAdsToRunning()
 
     const adRequests = await db.adRequest.findMany({
       where,
       include: {
-        promotor: { select: { id: true, name: true, email: true, city: true, phone: true } },
+        promotor: {
+          select: isAdmin
+            ? { id: true, name: true, email: true, city: true, phone: true }
+            : { id: true, name: true, city: true },
+        },
         contentCreator: { select: { id: true, name: true, email: true } },
         adReport: true,
         promotorResult: true,

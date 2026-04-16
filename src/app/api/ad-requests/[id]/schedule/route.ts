@@ -21,6 +21,15 @@ export async function POST(
       return NextResponse.json({ error: "Tanggal mulai dan selesai wajib diisi" }, { status: 400 })
     }
 
+    const startDate = new Date(adStartDate)
+    const endDate = new Date(adEndDate)
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return NextResponse.json({ error: "Format tanggal tidak valid" }, { status: 400 })
+    }
+    if (startDate > endDate) {
+      return NextResponse.json({ error: "Tanggal mulai tidak boleh melebihi tanggal selesai" }, { status: 400 })
+    }
+
     const adRequest = await db.adRequest.findUnique({
       where: { id },
       include: { promotor: true },
@@ -37,9 +46,9 @@ export async function POST(
     const updated = await db.adRequest.update({
       where: { id },
       data: { 
-        status: "IKLAN_DIJADWALKAN",
-        adStartDate: new Date(adStartDate),
-        adEndDate: new Date(adEndDate),
+        status: startDate <= new Date() ? "IKLAN_BERJALAN" : "IKLAN_DIJADWALKAN",
+        adStartDate: startDate,
+        adEndDate: endDate,
       },
       include: { promotor: true },
     })
@@ -49,7 +58,7 @@ export async function POST(
     await createNotification(
       adRequest.promotorId,
       "Iklan Telah Dijadwalkan",
-      `Iklan Anda untuk ${adRequest.city} telah dijadwalkan tayang pada ${new Date(adStartDate).toLocaleDateString("id-ID")}.`,
+      `Iklan Anda untuk ${adRequest.city} telah dijadwalkan tayang pada ${startDate.toLocaleDateString("id-ID")}.`,
       "AD_SCHEDULED",
       id
     )

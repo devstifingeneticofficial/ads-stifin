@@ -6,6 +6,13 @@ import { buildInvoiceNumber } from "@/lib/invoice"
 
 const REQUEST_AMOUNT = 20000
 const CONTENTS_PER_REQUEST = 4
+const PAYOUT_ELIGIBLE_STATUSES = [
+  "KONTEN_SELESAI",
+  "IKLAN_DIJADWALKAN",
+  "IKLAN_BERJALAN",
+  "SELESAI",
+  "FINAL",
+]
 
 export async function POST(req: Request) {
   try {
@@ -29,7 +36,7 @@ export async function POST(req: Request) {
     const items = await db.adRequest.findMany({
       where: {
         id: { in: adRequestIds },
-        status: "KONTEN_SELESAI",
+        status: { in: PAYOUT_ELIGIBLE_STATUSES },
         contentCreatorId: { not: null },
         creatorPayoutItem: null,
       },

@@ -17,8 +17,8 @@ export async function POST(
     const { id } = await params
     const { totalClients, note } = await req.json()
 
-    if (!totalClients) {
-      return NextResponse.json({ error: "Jumlah klien wajib diisi" }, { status: 400 })
+    if (!Number.isFinite(totalClients) || totalClients < 0) {
+      return NextResponse.json({ error: "Jumlah klien harus angka 0 atau lebih" }, { status: 400 })
     }
 
     const adRequest = await db.adRequest.findUnique({
@@ -28,6 +28,13 @@ export async function POST(
 
     if (!adRequest || adRequest.promotorId !== session.id) {
       return NextResponse.json({ error: "Pengajuan tidak ditemukan" }, { status: 404 })
+    }
+
+    if (adRequest.status !== "SELESAI") {
+      return NextResponse.json(
+        { error: "Laporan klien hanya dapat diinput setelah status iklan SELESAI" },
+        { status: 400 }
+      )
     }
 
     const existingResult = await db.promotorResult.findUnique({
