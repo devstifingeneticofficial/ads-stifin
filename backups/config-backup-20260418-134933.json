@@ -1,0 +1,78 @@
+{
+  "createdAt": "2026-04-18T06:49:33.171Z",
+  "source": {
+    "databaseUrl": "file:./custom.db",
+    "app": "ads-stifin"
+  },
+  "data": {
+    "briefTemplates": [
+      {
+        "type": "JJ",
+        "name": "BRIEF JJ - 1",
+        "content": "✅ {city}: {day}, {date}\n- 1 konten JJ sound teet toot teet\n- 1 konten JJ sound random\n- 1 konten JJ sound random"
+      },
+      {
+        "type": "JJ",
+        "name": "BRIEF JJ - 2",
+        "content": "✅ {city}: {day}, {date}\n- 1 konten JJ sound yali yali\n- 1 konten JJ sound random\n- 1 konten JJ sound random"
+      },
+      {
+        "type": "VO",
+        "name": "BRIEF VO - 2",
+        "content": "#Brief Video 2 - VO {city}\n\n----------\n\nHai Warga {city}!\n\"Kalau ada cara ilmiah buat tahu bakat dan cara belajar anak cuma dalam 15 menit, kamu mau coba?\"\n\n\"Banyak orang tua baru sadar bakat anaknya ketika sudah remaja, atau bahkan setelah kuliah.\nPadahal mengenali potensi itu paling baik dilakukan saat sejak dini.\n\nDengan Tes STIFIn, Anda bisa tahu sejak awal:\napa bakat alaminya, cara belajar paling cocok, dan lingkungan yang membuatnya berkembang maksimal.\n\nCatat jadwalnya ya!\n📅 {day}, {date} - di Kota {city}!\n\nJangan tunggu nanti. Anak tumbuh cepat, waktu tak bisa diulang.\n✨ Klik tombol di bawah dan mulai langkah kecil untuk masa depan anak lewat Tes STIFIn."
+      },
+      {
+        "type": "VO",
+        "name": "BRIEF VO 1",
+        "content": "#Brief Video 1 - VO {city}\n\n----------\n\n“Hai Warga {city}! \nSaatnya kenali potensi terbaik dalam dirimu lewat Tes STIFIn!\n\nKenali potensi alami dan karakter bawaanmu lewat Tes STIFIn – Tes Minat & Bakat Genetik.\n\nCatat jadwalnya ya!\n📅 {day}, {date} - di Kota {city}! \n\n“Bawa keluarga, pasangan, atau sahabatmu biar sama-sama kenal potensi masing-masing. Karena perubahan besar dimulai dari mengenal diri sendiri.”\n\nTemukan keunikan dirimu, pahami cara belajar paling efektif,\ndan mulai arahkan masa depanmu sesuai dengan mesin kecerdasan genetikmu.\n\n✨ Info dan pendaftaran klik tombol di bawah ini ya!\nTes STIFIn — Kenali Dirimu, Maksimalkan Hidupmu."
+      },
+      {
+        "type": "VO",
+        "name": "BRIEF VO 3",
+        "content": "#Brief Video 3 - VO {city}\n\n----------\n\nHai Warga {city}!\n\nSudah siap menemukan rahasia terbesar dalam dirimu?\n\nSaatnya kenali potensi terbaik dan karakter bawaanmu yang unik lewat Tes STIFIn – Tes Minat & Bakat Genetik!\n\nCatat tanggalnya ya :\n📅 {day}, {date} - di Kota {city}!\n\nAjak seluruh keluarga, pasangan, atau sahabatmu. Kenapa? Karena perubahan besar dimulai dari mengenal diri sendiri. Mari sama-sama kita pahami keunikan masing-masing!\n\nTemukan cara belajar paling efektif dan mesin kecerdasan genetik untuk mengoptimalkan masa depanmu!\n\n✨ Jangan tunda lagi! Info dan pendaftaran, segera klik tombol di bawah ini!\n\nTes STIFIn: Kenali Dirimu, Maksimalkan Potensimu!"
+      }
+    ],
+    "notificationTemplates": [
+      {
+        "slug": "ad-scheduled-promotor",
+        "name": "ad-scheduled-promotor",
+        "message": "",
+        "isActive": false
+      },
+      {
+        "slug": "bonus-disbursed-advertiser",
+        "name": "bonus-disbursed-advertiser",
+        "message": "Halo *{advertiser}*, bonus telah dicairkan pada *{tanggal}*. Invoice: *{invoice}*. Total *{nominal}* untuk *{jumlah_klien} klien* (*{jumlah_item} item*) dari *{promotor}*.\n\nCek aplikasi STIFIn untuk info lebih detail.",
+        "isActive": true
+      },
+      {
+        "slug": "content-finished-promotor",
+        "name": "content-finished-promotor",
+        "message": "",
+        "isActive": false
+      },
+      {
+        "slug": "payment-confirmed-promotor",
+        "name": "payment-confirmed-promotor",
+        "message": "",
+        "isActive": false
+      },
+      {
+        "slug": "salary-disbursed-creator",
+        "name": "salary-disbursed-creator",
+        "message": "Halo *{creator}*, bonus Anda telah dicairkan pada *{tanggal}*. Invoice: *{invoice}*. Total *{jumlah_konten} konten* dari *{jumlah_request} iklan* dengan nominal *{nominal}*.\n\nCek aplikasi STIFIn untuk info lebih detail.",
+        "isActive": true
+      }
+    ],
+    "systemSettings": [
+      {
+        "key": "meta_ads_text_template_v1",
+        "value": "{\"primaryTexts\":[\"Hai warga {city}!\\nSaatnya kenali potensi terbaik dalam dirimu lewat Tes STIFIn!\\n\\nCatat tanggalnya!\\n📅 {day}, {date} di Kota {city}!\\n\\nTemukan tipe kecerdasan dominanmu dan dapatkan insight langsung dari tim STIFIn Genetic.\\n\\nYuk, jangan lewatkan kesempatan langka ini.\\ntempat terbatas, daftar sekarang juga!\",\"Kamu nggak perlu menebak-nebak siapa dirimu!\\n\\nLewat Tes STIFIn, kamu bisa tahu potensi bawaan, cara belajar paling efektif, dan arah karier terbaikmu.\\n\\nCatat tanggalnya:\\n📅 {day}, {date} di Kota {city}!\\n\\n✨ Klik tombol di bawah untuk Pendaftaran dan rasakan bedanya setelah benar-benar mengenal dirimu sendiri!\\nTes STIFIn — Kenali Dirimu, Maksimalkan Hidupmu.\",\"Banyak orang tua baru sadar bakat anaknya saat sudah remaja.\\n\\nPadahal potensi itu bisa dikenali sejak dini, bahkan dalam waktu 15 menit.\\n\\nDengan Tes STIFIn Genetic, kamu bisa tahu gaya belajar anak, cara berpikir dominannya, dan bidang yang membuatnya bersinar. 🌱\\n\\nCatat tanggalnya :\\n📅 {day}, {date} di Kota {city}!\\n\\n👉 Klik tombol di bawah dan bantu arahkan masa depan anak dari sekarang!\",\"1x Tes Seumur Hidup!\\n\\nSaatnya kenali potensi terbaik dalam dirimu lewat Tes STIFIn!\\n\\nUntuk siapa Tes STIFIn?\\n✅ Anak-anak\\n✅ Remaja\\n✅ Orangtua\\n✅ Semua kalangan\\n\\nCatat tanggalnya!\\n📅 {day}, {date} di Kota {city}!\\n\\nTemukan tipe kecerdasan dan bakat dominanmu dan dapatkan insight langsung dari tim STIFIn Genetic.\\n\\nYuk, jangan lewatkan kesempatan langka ini.\\ntempat terbatas, daftar sekarang juga!\",\"Orang tua ingin yang terbaik untuk anak. Tapi tanpa memahami bakat alaminya, kita sering menebak-nebak.\\n\\n1x Tes Seumur Hidup!\\n\\n3 Manfaat Tes STIFIn :\\n✅ Menemukan potensi terkuat anak\\n✅ Mengetahui cara belajar yang paling efektif\\n✅ Membantu anak tumbuh dengan rasa percaya diri\\n\\nCatat tanggalnya!\\n📅 {day}, {date} di Kota {city}!\\n\\nSatu tes, efeknya panjang untuk masa depan.\\nDaftar sekarang sebelum kuota habis.\"],\"headlines\":[\"Tes STIFIn {city}!\",\"Tes STIFIn: Kunci Kenali Diri & Kariermu\",\"{tanggal} {month}! Tes STIFIn {city}🚀\",\"Tes Minat & Bakat Genetic!\",\"Daftar Sekarang!\"],\"description\":\"Tes STIFIn bantu kamu paham kenapa kamu beda, dan itu kelebihanmu!\"}"
+      },
+      {
+        "key": "wa_channel_link",
+        "value": "https://wa.me/6282325143765"
+      }
+    ]
+  }
+}

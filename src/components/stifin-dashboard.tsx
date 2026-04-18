@@ -234,6 +234,11 @@ const statusConfig: Record<
     variant: "outline",
     className: "border-amber-500 text-amber-700 bg-amber-50",
   },
+  MENUNGGU_VERIFIKASI_PEMBAYARAN: {
+    label: "Menunggu Verifikasi Pembayaran",
+    variant: "outline",
+    className: "border-amber-600 text-amber-800 bg-amber-100",
+  },
   MENUNGGU_KONTEN: {
     label: "Menunggu Konten",
     variant: "outline",
@@ -353,7 +358,7 @@ export default function StifinDashboard() {
         }
       }
 
-      if (ad.status !== "MENUNGGU_PEMBAYARAN") {
+      if (!["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status)) {
         stats[p.id].totalConfirmed++
         stats[p.id].totalDailyBudget += ad.dailyBudget
         stats[p.id].adCountForBudget++

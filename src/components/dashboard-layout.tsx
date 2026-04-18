@@ -97,6 +97,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (user?.role === "PROMOTOR" && !editPhone.trim()) {
+      toast.error("Nomor WhatsApp wajib diisi untuk akun promotor")
+      return
+    }
     setIsUpdating(true)
     try {
       const res = await fetch("/api/users/profile", {
@@ -328,6 +332,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   value={editPhone}
                   onChange={(e) => setEditPhone(e.target.value)}
                   placeholder="Contoh: 08123456789"
+                  required={user?.role === "PROMOTOR"}
                 />
                 <p className="text-[10px] text-muted-foreground">
                   Gunakan format angka saja (contoh: 08123456789)

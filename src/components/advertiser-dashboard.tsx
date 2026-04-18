@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -25,6 +25,9 @@ import {
   Wallet,
   ReceiptText,
   ChevronDown,
+  RefreshCcw,
+  PlugZap,
+  Trash2,
 } from "lucide-react"
 
 import {
@@ -52,6 +55,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { buildCampaignName } from "@/lib/campaign-naming"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,9 +81,15 @@ interface NotificationTemplate {
   isActive?: boolean
 }
 
+interface PromotorResult {
+  totalClients: number
+  status: string
+}
+
 interface AdRequest {
   id: string
-  promotor: { id: string; name: string; email: string; city: string }
+  campaignCode?: string | null
+  promotor: { id: string; name: string; email: string; city: string; phone?: string | null }
   city: string
   startDate: string
   testEndDate: string | null
@@ -96,8 +106,24 @@ interface AdRequest {
   adReport: AdReport | null
   promotorResult: PromotorResult | null
   promotorNote: string | null
+  metaCampaignId?: string | null
+  metaAdSetId?: string | null
+  metaAdIds?: string | null
+  metaDraftStatus?: string | null
+  metaDraftError?: string | null
+  metaDraftUpdatedAt?: string | null
   createdAt: string
 }
+
+interface MetaAdsTemplate {
+  primaryTexts: string[]
+  headlines: string[]
+  description: string
+}
+type MetaDraftMode = "GENERATE" | "DUPLICATE"
+const META_DRAFT_MODE_STORAGE_KEY = "meta_draft_mode_preference_v1"
+const CONFIG_BACKUP_LAST_AT_STORAGE_KEY = "config_backup_last_at_v1"
+const CONFIG_BACKUP_LAST_ACTION_STORAGE_KEY = "config_backup_last_action_v1"
 
 interface PayoutBatchMonitor {
   id: string
@@ -107,6 +133,7 @@ interface PayoutBatchMonitor {
   totalRequests: number
   totalContents: number
   totalAmount: number
+  transferProofUrl?: string | null
   items: Array<{
     id: string
     city: string
@@ -185,6 +212,7 @@ interface ManagedUser {
   city: string | null
   phone: string | null
   canToggle: boolean
+  canDelete?: boolean
   isEnabled: boolean
 }
 
@@ -226,6 +254,69 @@ const formatShortDate = (dateStr: string): string => {
   })
 }
 
+const formatDateTime = (dateStr: string): string => {
+  const date = new Date(dateStr)
+  return date.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+const formatDateTimeFromDate = (date: Date): string =>
+  date.toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+const computeDefaultAdSchedule = (testStartDateStr: string, testEndDateStr: string | null, durationDays: number) => {
+  const testReferenceDate = new Date(testEndDateStr || testStartDateStr)
+  const safeDuration = Math.max(1, Number(durationDays) || 1)
+
+  // End date ad: H-1 dari tanggal tes, jam 21:00.
+  const end = new Date(testReferenceDate)
+  end.setDate(testReferenceDate.getDate() - 1)
+  end.setHours(21, 0, 0, 0)
+
+  // Start date ad: mundur sesuai durasi, jam 16:00.
+  const start = new Date(end)
+  start.setDate(end.getDate() - safeDuration)
+  start.setHours(16, 0, 0, 0)
+
+  // Deadline konten: H-1 dari start date, jam 23:59.
+  const contentDeadline = new Date(start)
+  contentDeadline.setDate(start.getDate() - 1)
+  contentDeadline.setHours(23, 59, 0, 0)
+
+  // Deadline pembayaran: H-2 dari start date, jam 23:59.
+  const paymentDeadline = new Date(start)
+  paymentDeadline.setDate(start.getDate() - 2)
+  paymentDeadline.setHours(23, 59, 0, 0)
+
+  return { start, end, contentDeadline, paymentDeadline }
+}
+
+const computeMaxAllowedAdEndDate = (testStartDateStr: string, testEndDateStr: string | null) => {
+  const testReferenceDate = new Date(testEndDateStr || testStartDateStr)
+  const maxEnd = new Date(testReferenceDate)
+  maxEnd.setDate(testReferenceDate.getDate() - 1)
+  maxEnd.setHours(21, 0, 0, 0)
+  return maxEnd
+}
+
+const formatCampaignLabel = (ad: AdRequest): string =>
+  buildCampaignName({
+    city: ad.city,
+    startDate: new Date(ad.startDate),
+    promotorName: ad.promotor.name,
+    campaignCode: ad.campaignCode || undefined,
+  })
+
 const formatTestDate = (start: string, end?: string | null) => {
   const s = new Date(start)
   const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
@@ -246,6 +337,20 @@ const getCvrColor = (cvr: number) => {
   if (cvr <= 5) return "bg-red-100 text-red-700 border-red-200"
   if (cvr <= 10) return "bg-amber-100 text-amber-700 border-amber-200"
   return "bg-emerald-100 text-emerald-700 border-emerald-200"
+}
+
+const getCprFinalAccentClass = (cpr: number | null | undefined) => {
+  if (!cpr || !Number.isFinite(cpr)) return "border-l-slate-300"
+  if (cpr <= 2000) return "border-l-emerald-500"
+  if (cpr <= 4000) return "border-l-amber-500"
+  return "border-l-rose-500"
+}
+
+const getCprFinalPanelClass = (cpr: number | null | undefined) => {
+  if (!cpr || !Number.isFinite(cpr)) return "bg-slate-50/50 border-slate-100"
+  if (cpr <= 2000) return "bg-emerald-50/60 border-emerald-100"
+  if (cpr <= 4000) return "bg-amber-50/60 border-amber-100"
+  return "bg-rose-50/60 border-rose-100"
 }
 
 const formatToDateTimeLocal = (date: Date) => {
@@ -269,8 +374,39 @@ const toDateTimeLocalInput = (value: string | null) => {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`
 }
 
+const getJakartaDatePreviewTokens = (dateStr: string) => {
+  const date = new Date(dateStr)
+  const day = new Intl.DateTimeFormat("id-ID", { weekday: "long", timeZone: "Asia/Jakarta" }).format(date)
+  const tanggal = new Intl.DateTimeFormat("id-ID", { day: "numeric", timeZone: "Asia/Jakarta" }).format(date)
+  const month = new Intl.DateTimeFormat("id-ID", { month: "long", timeZone: "Asia/Jakarta" }).format(date)
+  const year = new Intl.DateTimeFormat("id-ID", { year: "numeric", timeZone: "Asia/Jakarta" }).format(date)
+  return {
+    day,
+    tanggal,
+    month,
+    year,
+    date: `${tanggal} ${month} ${year}`,
+  }
+}
+
+const applyMetaTemplatePreview = (
+  text: string,
+  sample: { city: string; date: string; day: string; tanggal: string; month: string; year: string; promotor: string }
+) =>
+  text
+    .replaceAll("{city}", sample.city)
+    .replaceAll("{kota}", sample.city)
+    .replaceAll("{date}", sample.date)
+    .replaceAll("{date_full}", sample.date)
+    .replaceAll("{day}", sample.day)
+    .replaceAll("{tanggal}", sample.tanggal)
+    .replaceAll("{month}", sample.month)
+    .replaceAll("{year}", sample.year)
+    .replaceAll("{promotor}", sample.promotor)
+
 const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
   MENUNGGU_PEMBAYARAN: { label: "Menunggu Pembayaran", variant: "outline", className: "border-amber-500 text-amber-700 bg-amber-50" },
+  MENUNGGU_VERIFIKASI_PEMBAYARAN: { label: "Menunggu Verifikasi Pembayaran", variant: "outline", className: "border-amber-600 text-amber-800 bg-amber-100" },
   MENUNGGU_KONTEN: { label: "Menunggu Konten", variant: "outline", className: "border-orange-500 text-orange-700 bg-orange-50" },
   DIPROSES: { label: "Diproses", variant: "outline", className: "border-blue-500 text-blue-700 bg-blue-50" },
   KONTEN_SELESAI: { label: "Konten Selesai", variant: "outline", className: "border-green-500 text-green-700 bg-green-50" },
@@ -342,6 +478,11 @@ export default function AdvertiserDashboard() {
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
   const [usersLoading, setUsersLoading] = useState(false)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [backingUpConfig, setBackingUpConfig] = useState(false)
+  const [restoringConfig, setRestoringConfig] = useState(false)
+  const [configLastBackupAt, setConfigLastBackupAt] = useState<string | null>(null)
+  const [configLastAction, setConfigLastAction] = useState<"backup" | "restore" | null>(null)
   const [createUserDialogOpen, setCreateUserDialogOpen] = useState(false)
   const [createUserLoading, setCreateUserLoading] = useState(false)
   const [createUserName, setCreateUserName] = useState("")
@@ -362,6 +503,50 @@ export default function AdvertiserDashboard() {
   const [announcementIsActive, setAnnouncementIsActive] = useState(true)
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("")
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("")
+  const [metaTemplate, setMetaTemplate] = useState<MetaAdsTemplate>({
+    primaryTexts: ["", "", "", "", ""],
+    headlines: ["", "", "", "", ""],
+    description: "",
+  })
+  const [metaTestResult, setMetaTestResult] = useState<string | null>(null)
+  const [metaTesting, setMetaTesting] = useState(false)
+  const [metaSyncingPerformance, setMetaSyncingPerformance] = useState(false)
+  const [metaSavingTemplate, setMetaSavingTemplate] = useState(false)
+  const [metaRetryingAdId, setMetaRetryingAdId] = useState<string | null>(null)
+  const [metaDraftMode, setMetaDraftMode] = useState<MetaDraftMode>("GENERATE")
+  const restoreConfigInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(META_DRAFT_MODE_STORAGE_KEY)
+      if (saved === "DUPLICATE" || saved === "GENERATE") {
+        setMetaDraftMode(saved)
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(META_DRAFT_MODE_STORAGE_KEY, metaDraftMode)
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [metaDraftMode])
+
+  useEffect(() => {
+    try {
+      const lastAt = window.localStorage.getItem(CONFIG_BACKUP_LAST_AT_STORAGE_KEY)
+      const lastAction = window.localStorage.getItem(CONFIG_BACKUP_LAST_ACTION_STORAGE_KEY)
+      if (lastAt) setConfigLastBackupAt(lastAt)
+      if (lastAction === "backup" || lastAction === "restore") {
+        setConfigLastAction(lastAction)
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [])
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorStats = (adRequests: AdRequest[]) => {
@@ -393,7 +578,7 @@ export default function AdvertiserDashboard() {
         }
       }
 
-      if (ad.status !== "MENUNGGU_PEMBAYARAN") {
+      if (!["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status)) {
         stats[p.id].totalConfirmed++
         stats[p.id].totalDailyBudget += ad.dailyBudget
         stats[p.id].adCountForBudget++
@@ -416,8 +601,53 @@ export default function AdvertiserDashboard() {
   const creatorUsers = managedUsers.filter((u) => u.role === "KONTEN_KREATOR")
   const activeCreatorCount = creatorUsers.filter((u) => u.isEnabled).length
   const inactiveCreatorCount = Math.max(creatorUsers.length - activeCreatorCount, 0)
+  const metaPreviewSample = (() => {
+    const latest = adRequests[0]
+    if (!latest) {
+      return {
+        city: "Gresik",
+        day: "Minggu",
+        tanggal: "26",
+        month: "April",
+        year: "2026",
+        date: "26 April 2026",
+        promotor: "Roy",
+      }
+    }
+    const tokens = getJakartaDatePreviewTokens(latest.startDate)
+    return {
+      city: latest.city,
+      day: tokens.day,
+      tanggal: tokens.tanggal,
+      month: tokens.month,
+      year: tokens.year,
+      date: tokens.date,
+      promotor: latest.promotor.name,
+    }
+  })()
 
-  const fetchAdRequests = useCallback(async () => {
+  const syncMetaPerformanceData = useCallback(async (showToast = false) => {
+    setMetaSyncingPerformance(true)
+    try {
+      const res = await fetch("/api/meta/sync-performance", {
+        method: "POST",
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (showToast && data?.ok) {
+        toast.success(`Sinkron Meta: ${data.linkedCount} mapping, ${data.updatedCount} data terbarui`)
+      }
+    } catch {
+      // silent fail; advertiser can still work with existing data
+    } finally {
+      setMetaSyncingPerformance(false)
+    }
+  }, [])
+
+  const fetchAdRequests = useCallback(async (runSync = false) => {
+    if (runSync) {
+      await syncMetaPerformanceData(false)
+    }
     try {
       const res = await fetch("/api/ad-requests")
       if (!res.ok) throw new Error("Gagal mengambil data")
@@ -428,7 +658,7 @@ export default function AdvertiserDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [syncMetaPerformanceData])
 
   const fetchBriefTemplates = useCallback(async () => {
     try {
@@ -506,9 +736,24 @@ export default function AdvertiserDashboard() {
     }
   }, [])
 
+  const fetchMetaTemplate = useCallback(async () => {
+    try {
+      const res = await fetch("/api/meta/templates")
+      if (!res.ok) throw new Error("Gagal mengambil template Meta Ads")
+      const data = await res.json()
+      setMetaTemplate({
+        primaryTexts: Array.from({ length: 5 }).map((_, idx) => data.primaryTexts?.[idx] || ""),
+        headlines: Array.from({ length: 5 }).map((_, idx) => data.headlines?.[idx] || ""),
+        description: data.description || "",
+      })
+    } catch {
+      // silent fail
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
-      fetchAdRequests()
+      fetchAdRequests(true)
       fetchBriefTemplates()
       fetchNotifTemplates()
       fetchWaChannelLink()
@@ -516,22 +761,13 @@ export default function AdvertiserDashboard() {
       fetchBonusMonitor()
       fetchManagedUsers()
       fetchAnnouncements()
+      fetchMetaTemplate()
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchAnnouncements])
+  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchAnnouncements, fetchMetaTemplate])
 
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
-      const baseDate = new Date(selectedAd.startDate)
-
-      // Default Start: T - 4 days at 16:00
-      const start = new Date(baseDate)
-      start.setDate(baseDate.getDate() - 4)
-      start.setHours(16, 0, 0, 0)
-
-      // Default End: Start + Duration at 21:00
-      const end = new Date(start)
-      end.setDate(start.getDate() + selectedAd.durationDays)
-      end.setHours(21, 0, 0, 0)
+      const { start, end } = computeDefaultAdSchedule(selectedAd.startDate, selectedAd.testEndDate, selectedAd.durationDays)
 
       setAdStartDate(formatToDateTimeLocal(start))
       setAdEndDate(formatToDateTimeLocal(end))
@@ -576,12 +812,33 @@ export default function AdvertiserDashboard() {
   const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedAd) return
+    const startDate = new Date(adStartDate)
+    const endDate = new Date(adEndDate)
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      toast.error("Format waktu jadwal tidak valid")
+      return
+    }
+
+    if (startDate.getTime() > endDate.getTime()) {
+      toast.error("Waktu mulai tayang tidak boleh melebihi waktu berakhir")
+      return
+    }
+
+    if (scheduleMode === "DEFAULT") {
+      const maxAllowedEndDate = computeMaxAllowedAdEndDate(selectedAd.startDate, selectedAd.testEndDate)
+      if (endDate.getTime() > maxAllowedEndDate.getTime()) {
+        toast.error(`Waktu berakhir melebihi batas. Maksimal ${formatDateTimeFromDate(maxAllowedEndDate)} (H-1 jam 21:00).`)
+        return
+      }
+    }
+
     setIsSubmitting(true)
     try {
       const res = await fetch(`/api/ad-requests/${selectedAd.id}/schedule`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adStartDate, adEndDate }),
+        body: JSON.stringify({ adStartDate, adEndDate, mode: scheduleMode }),
       })
       if (!res.ok) throw new Error("Gagal")
       toast.success("Iklan berhasil dijadwalkan!")
@@ -678,6 +935,108 @@ export default function AdvertiserDashboard() {
       toast.error(error?.message || "Gagal memperbarui status user")
     } finally {
       setUpdatingUserId(null)
+    }
+  }
+
+  const handleDeleteManagedUser = async (userId: string) => {
+    if (!confirm("Hapus user promotor ini? Aksi ini tidak bisa dibatalkan.")) return
+    setDeletingUserId(userId)
+    try {
+      const res = await fetch(`/api/users/manage?userId=${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menghapus user")
+      setManagedUsers((prev) => prev.filter((u) => u.id !== userId))
+      toast.success("User promotor berhasil dihapus")
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menghapus user")
+    } finally {
+      setDeletingUserId(null)
+    }
+  }
+
+  const handleBackupConfig = async () => {
+    setBackingUpConfig(true)
+    try {
+      const res = await fetch("/api/system/config-backup")
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal backup config")
+
+      const stamp = new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")
+        .slice(0, 19)
+      const filename = `config-backup-${stamp}.json`
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+
+      const nowIso = new Date().toISOString()
+      setConfigLastBackupAt(nowIso)
+      setConfigLastAction("backup")
+      try {
+        window.localStorage.setItem(CONFIG_BACKUP_LAST_AT_STORAGE_KEY, nowIso)
+        window.localStorage.setItem(CONFIG_BACKUP_LAST_ACTION_STORAGE_KEY, "backup")
+      } catch {
+        // ignore localStorage errors
+      }
+
+      toast.success("Backup config berhasil diunduh")
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal backup config")
+    } finally {
+      setBackingUpConfig(false)
+    }
+  }
+
+  const handleRestoreConfigClick = () => {
+    restoreConfigInputRef.current?.click()
+  }
+
+  const handleRestoreConfigFile = async (file: File | null) => {
+    if (!file) return
+    if (!confirm("Restore config akan menimpa Master Brief, Notifikasi WA, dan setting Meta Ads. Lanjutkan?")) {
+      return
+    }
+
+    setRestoringConfig(true)
+    try {
+      const text = await file.text()
+      const payload = JSON.parse(text)
+      const res = await fetch("/api/system/config-restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal restore config")
+
+      const nowIso = new Date().toISOString()
+      setConfigLastBackupAt(nowIso)
+      setConfigLastAction("restore")
+      try {
+        window.localStorage.setItem(CONFIG_BACKUP_LAST_AT_STORAGE_KEY, nowIso)
+        window.localStorage.setItem(CONFIG_BACKUP_LAST_ACTION_STORAGE_KEY, "restore")
+      } catch {
+        // ignore localStorage errors
+      }
+
+      toast.success("Restore config berhasil")
+      await Promise.all([fetchBriefTemplates(), fetchNotifTemplates(), fetchMetaTemplate(), fetchWaChannelLink()])
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal restore config")
+    } finally {
+      setRestoringConfig(false)
+      if (restoreConfigInputRef.current) {
+        restoreConfigInputRef.current.value = ""
+      }
     }
   }
 
@@ -800,6 +1159,88 @@ export default function AdvertiserDashboard() {
     }
   }
 
+  const updateMetaTemplateList = (type: "primaryTexts" | "headlines", index: number, value: string) => {
+    setMetaTemplate((prev) => {
+      const next = [...prev[type]]
+      next[index] = value
+      return { ...prev, [type]: next }
+    })
+  }
+
+  const handleSaveMetaTemplate = async () => {
+    setMetaSavingTemplate(true)
+    try {
+      const payload = {
+        primaryTexts: metaTemplate.primaryTexts.filter((item) => item.trim()),
+        headlines: metaTemplate.headlines.filter((item) => item.trim()),
+        description: metaTemplate.description,
+      }
+      const res = await fetch("/api/meta/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menyimpan template Meta Ads")
+      toast.success("Template Meta Ads berhasil disimpan")
+      fetchMetaTemplate()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menyimpan template Meta Ads")
+    } finally {
+      setMetaSavingTemplate(false)
+    }
+  }
+
+  const handleMetaConnectionTest = async () => {
+    setMetaTesting(true)
+    setMetaTestResult(null)
+    try {
+      const res = await fetch("/api/meta/test")
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error || "Koneksi Meta gagal")
+      const accountName = data.result?.account?.name || data.result?.account?.id || "-"
+      setMetaTestResult(`Terhubung: ${data.result?.me?.name || "-"} • Ad Account: ${accountName}`)
+      toast.success("Koneksi Meta Ads berhasil")
+    } catch (error: any) {
+      setMetaTestResult(error?.message || "Koneksi Meta gagal")
+      toast.error(error?.message || "Koneksi Meta gagal")
+    } finally {
+      setMetaTesting(false)
+    }
+  }
+
+  const handleRetryMetaDraft = async (adId: string) => {
+    setMetaRetryingAdId(adId)
+    try {
+      const res = await fetch("/api/meta/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adRequestId: adId, force: true, mode: metaDraftMode }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.message || data.error || "Gagal generate ulang draft Meta")
+      toast.success(data.message || "Draft Meta berhasil digenerate ulang")
+      fetchAdRequests()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal generate ulang draft Meta")
+    } finally {
+      setMetaRetryingAdId(null)
+    }
+  }
+
+  const handleCopyText = async (text: string, label: string) => {
+    if (!text.trim()) {
+      toast.error(`${label} masih kosong`)
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(`${label} berhasil disalin`)
+    } catch {
+      toast.error(`Gagal menyalin ${label}`)
+    }
+  }
+
   const handleToggleAnnouncement = async (item: GlobalAnnouncement, nextActive: boolean) => {
     setIsSubmitting(true)
     try {
@@ -832,7 +1273,7 @@ export default function AdvertiserDashboard() {
   const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
   const statusCounts = {
     all: adRequests.length,
-    MENUNGGU_PEMBAYARAN: adRequests.filter((r) => r.status === "MENUNGGU_PEMBAYARAN").length,
+    MENUNGGU_PEMBAYARAN: adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status)).length,
     MENUNGGU_KONTEN: adRequests.filter((r) => r.status === "MENUNGGU_KONTEN").length,
     KONTEN_SELESAI: adRequests.filter((r) => r.status === "KONTEN_SELESAI").length,
     IKLAN_DIJADWALKAN: adRequests.filter((r) => r.status === "IKLAN_DIJADWALKAN").length,
@@ -843,7 +1284,9 @@ export default function AdvertiserDashboard() {
 
   const filteredRequests = statusTab === "all"
     ? adRequests
-    : adRequests.filter(r => r.status === statusTab)
+    : statusTab === "MENUNGGU_PEMBAYARAN"
+      ? adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status))
+      : adRequests.filter(r => r.status === statusTab)
 
   if (loading) return <div className="p-8"><Skeleton className="h-40 w-full" /></div>
 
@@ -896,6 +1339,7 @@ export default function AdvertiserDashboard() {
         <TabsList className="w-full bg-slate-100/50 p-1 border h-auto flex flex-wrap justify-start gap-1">
           <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
+          <TabsTrigger value="meta_ads" className="gap-2 text-xs sm:text-sm"><PlugZap className="h-4 w-4" /> Meta Ads</TabsTrigger>
           <TabsTrigger value="whatsapp" className="gap-2 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> Notifikasi WA</TabsTrigger>
           <TabsTrigger value="alerts" className="gap-2 text-xs sm:text-sm"><AlertCircle className="h-4 w-4" /> Alert Center</TabsTrigger>
           <TabsTrigger value="payouts" className="gap-2 text-xs sm:text-sm"><Wallet className="h-4 w-4" /> Pencairan Kreator</TabsTrigger>
@@ -911,6 +1355,19 @@ export default function AdvertiserDashboard() {
                 <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
                 <p className="text-xs text-muted-foreground">Kelola pengajuan iklan Anda</p>
               </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-2"
+                onClick={async () => {
+                  await syncMetaPerformanceData(true)
+                  await fetchAdRequests(false)
+                }}
+                disabled={metaSyncingPerformance}
+              >
+                <RefreshCcw className={`h-4 w-4 ${metaSyncingPerformance ? "animate-spin" : ""}`} />
+                {metaSyncingPerformance ? "Sinkron..." : "Sinkron Meta"}
+              </Button>
             </div>
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
@@ -957,7 +1414,12 @@ export default function AdvertiserDashboard() {
                 </Card>
               ) : (
                 filteredRequests.map((ad) => (
-                  <Card key={ad.id} className="shadow-none hover:border-slate-300 transition-all overflow-hidden">
+                  <Card
+                    key={ad.id}
+                    className={`shadow-none hover:border-slate-300 transition-all overflow-hidden ${
+                      statusTab === "FINAL" ? `border-l-4 ${getCprFinalAccentClass(ad.adReport?.cpr)}` : ""
+                    }`}
+                  >
                     <CardHeader className="px-4 py-3 pb-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-0.5 min-w-0">
@@ -966,8 +1428,45 @@ export default function AdvertiserDashboard() {
                             {ad.city}
                           </CardTitle>
                           <p className="text-[10px] text-muted-foreground font-medium italic">Dibuat {formatDate(ad.createdAt)} • Promotor: {ad.promotor.name}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <Badge variant="outline" className="text-[10px] font-mono">
+                              {ad.campaignCode || "NO-CODE"}
+                            </Badge>
+                            <p className="text-[11px] text-muted-foreground">{formatCampaignLabel(ad)}</p>
+                            {ad.metaCampaignId && (
+                              <Badge variant="outline" className="text-[10px] font-mono">
+                                ID: {ad.metaCampaignId}
+                              </Badge>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={() => handleCopyText(formatCampaignLabel(ad), "Nama campaign")}
+                            >
+                              Copy
+                            </Button>
+                          </div>
                         </div>
-                        <div className="shrink-0">{getStatusBadge(ad.status)}</div>
+                        <div className="shrink-0 space-y-1">
+                          {getStatusBadge(ad.status)}
+                          {(ad.metaDraftStatus && ad.metaDraftStatus !== "NOT_CREATED") && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                ad.metaDraftStatus === "SUCCESS"
+                                  ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+                                  : ad.metaDraftStatus === "PARTIAL"
+                                    ? "border-amber-200 text-amber-700 bg-amber-50"
+                                  : ad.metaDraftStatus === "FAILED"
+                                    ? "border-rose-200 text-rose-700 bg-rose-50"
+                                    : "border-amber-200 text-amber-700 bg-amber-50"
+                              }
+                            >
+                              Meta: {ad.metaDraftStatus}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent className="px-4 py-3">
@@ -991,7 +1490,11 @@ export default function AdvertiserDashboard() {
                       </div>
 
                       {ad.adReport && (
-                        <div className={`grid ${ad.promotorResult ? "grid-cols-4" : "grid-cols-3"} gap-2 py-2 bg-slate-50/50 rounded-lg px-2 mb-2 border border-slate-100`}>
+                        <div
+                          className={`grid ${ad.promotorResult ? "grid-cols-4" : "grid-cols-3"} gap-2 py-2 rounded-lg px-2 mb-2 border ${
+                            statusTab === "FINAL" ? getCprFinalPanelClass(ad.adReport.cpr) : "bg-slate-50/50 border-slate-100"
+                          }`}
+                        >
                           <div className="flex flex-col items-center justify-center border-r">
                             <p className="text-[8px] uppercase font-bold text-muted-foreground tracking-wider">Leads</p>
                             <p className="text-sm font-bold text-emerald-700 leading-none mt-1">{ad.adReport.totalLeads}</p>
@@ -1032,7 +1535,7 @@ export default function AdvertiserDashboard() {
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          {ad.status === "MENUNGGU_PEMBAYARAN" && (
+                          {["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status) && (
                             <Button size="sm" className="h-8 w-full sm:w-auto font-semibold text-xs gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => handleVerifyPayment(ad.id)} disabled={isSubmitting}>
                               <DollarSign className="h-4 w-4" /> Konfirmasi Pembayaran
                             </Button>
@@ -1045,6 +1548,18 @@ export default function AdvertiserDashboard() {
                           {ad.status === "IKLAN_BERJALAN" && (
                             <Button size="sm" variant="secondary" className="h-8 w-full sm:w-auto font-semibold text-xs gap-2" onClick={() => { setSelectedAd(ad); setReportDialogOpen(true); }}>
                               <Upload className="h-4 w-4" /> Upload Laporan
+                            </Button>
+                          )}
+                          {(ad.status === "KONTEN_SELESAI" || ad.metaDraftStatus === "FAILED" || ad.metaDraftStatus === "PARTIAL") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 w-full sm:w-auto font-semibold text-xs gap-2"
+                              onClick={() => handleRetryMetaDraft(ad.id)}
+                              disabled={metaRetryingAdId === ad.id}
+                            >
+                              <RefreshCcw className={`h-4 w-4 ${metaRetryingAdId === ad.id ? "animate-spin" : ""}`} />
+                              {metaRetryingAdId === ad.id ? "Memproses..." : "Generate Draft Meta"}
                             </Button>
                           )}
 
@@ -1091,6 +1606,248 @@ export default function AdvertiserDashboard() {
               </Card>
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="meta_ads" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Integrasi Meta Ads</h2>
+              <p className="text-xs text-muted-foreground">Template caption/headline iklan dan monitoring draft otomatis saat status Konten Selesai.</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="inline-flex rounded-md border bg-white p-1">
+                <Button
+                  size="sm"
+                  variant={metaDraftMode === "GENERATE" ? "default" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => setMetaDraftMode("GENERATE")}
+                >
+                  Generate Draft
+                </Button>
+                <Button
+                  size="sm"
+                  variant={metaDraftMode === "DUPLICATE" ? "default" : "ghost"}
+                  className="h-7 text-xs"
+                  onClick={() => setMetaDraftMode("DUPLICATE")}
+                >
+                  Duplicate Campaign
+                </Button>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-2"
+                onClick={handleMetaConnectionTest}
+                disabled={metaTesting}
+              >
+                <RefreshCcw className={`h-4 w-4 ${metaTesting ? "animate-spin" : ""}`} />
+                {metaTesting ? "Mengecek..." : "Tes Koneksi Meta"}
+              </Button>
+            </div>
+          </div>
+
+          {metaTestResult && (
+            <Card className="shadow-none border-slate-100">
+              <CardContent className="p-3">
+                <p className="text-xs text-slate-700">{metaTestResult}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="shadow-none border-slate-100">
+            <CardHeader>
+              <CardTitle className="text-base">Template Teks Ads</CardTitle>
+              <CardDescription>
+                Setiap Ad menggunakan 5 Primary Text, 5 Headline, dan 1 Description.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Primary Text (5)</Label>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Textarea
+                      key={`primary-${index}`}
+                      value={metaTemplate.primaryTexts[index] || ""}
+                      onChange={(e) => updateMetaTemplateList("primaryTexts", index, e.target.value)}
+                      placeholder={`Primary text ${index + 1}`}
+                      className="text-xs min-h-[110px] resize-y"
+                      rows={5}
+                    />
+                  ))}
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Headline (5)</Label>
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Input
+                      key={`headline-${index}`}
+                      value={metaTemplate.headlines[index] || ""}
+                      onChange={(e) => updateMetaTemplateList("headlines", index, e.target.value)}
+                      placeholder={`Headline ${index + 1}`}
+                      className="text-xs"
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Description</Label>
+                <Textarea
+                  value={metaTemplate.description}
+                  onChange={(e) => setMetaTemplate((prev) => ({ ...prev, description: e.target.value }))}
+                  rows={3}
+                  className="text-xs"
+                  placeholder="Description Ads"
+                />
+              </div>
+
+              <div className="text-[11px] text-muted-foreground bg-slate-50 border rounded-md p-3">
+                Variabel yang bisa dipakai: {"{city}"}, {"{day}"}, {"{tanggal}"}, {"{month}"}, {"{year}"}, {"{date}"}, {"{promotor}"}
+              </div>
+
+              <div className="space-y-3 rounded-md border bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase text-slate-700">Preview Hasil Final</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Simulasi: {metaPreviewSample.day}, {metaPreviewSample.tanggal} {metaPreviewSample.month} {metaPreviewSample.year} • {metaPreviewSample.city} • {metaPreviewSample.promotor}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-700">Primary Text</p>
+                  {metaTemplate.primaryTexts.map((item, index) =>
+                    item.trim() ? (
+                      <div key={`preview-primary-${index}`} className="rounded-md border bg-white p-2">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <p className="text-[11px] font-semibold text-slate-600">Primary Text {index + 1}</p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() =>
+                              handleCopyText(
+                                applyMetaTemplatePreview(item, metaPreviewSample),
+                                `Primary Text ${index + 1}`
+                              )
+                            }
+                          >
+                            Copy
+                          </Button>
+                        </div>
+                        <p className="text-xs whitespace-pre-wrap break-words text-slate-700">
+                          {applyMetaTemplatePreview(item, metaPreviewSample)}
+                        </p>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-700">Headline</p>
+                  <div className="flex flex-wrap gap-2">
+                    {metaTemplate.headlines.map((item, index) =>
+                      item.trim() ? (
+                        <div key={`preview-headline-${index}`} className="inline-flex items-center gap-1 rounded-md border bg-white px-2 py-1">
+                          <Badge variant="outline" className="bg-white text-[11px] font-medium border-none px-0 py-0">
+                            {applyMetaTemplatePreview(item, metaPreviewSample)}
+                          </Badge>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 px-1.5 text-[10px]"
+                            onClick={() =>
+                              handleCopyText(
+                                applyMetaTemplatePreview(item, metaPreviewSample),
+                                `Headline ${index + 1}`
+                              )
+                            }
+                          >
+                            Copy
+                          </Button>
+                        </div>
+                      ) : null
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-semibold text-slate-700">Description</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 px-2 text-[10px]"
+                      onClick={() =>
+                        handleCopyText(
+                          applyMetaTemplatePreview(metaTemplate.description, metaPreviewSample),
+                          "Description"
+                        )
+                      }
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <div className="rounded-md border bg-white p-2 text-xs whitespace-pre-wrap break-words text-slate-700">
+                    {metaTemplate.description.trim()
+                      ? applyMetaTemplatePreview(metaTemplate.description, metaPreviewSample)
+                      : "-"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button size="sm" className="h-9 font-semibold" onClick={handleSaveMetaTemplate} disabled={metaSavingTemplate}>
+                  {metaSavingTemplate ? "Menyimpan..." : "Simpan Template Meta Ads"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-none border-slate-100">
+            <CardHeader>
+              <CardTitle className="text-base">Status Draft Meta per Pengajuan</CardTitle>
+              <CardDescription>
+                Draft otomatis dibuat saat konten selesai. Mode aktif: {metaDraftMode === "GENERATE" ? "Generate Draft" : "Duplicate Campaign Template"}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {adRequests.filter((item) => item.status === "KONTEN_SELESAI" || item.metaCampaignId || item.metaDraftStatus === "FAILED" || item.metaDraftStatus === "PARTIAL").length === 0 ? (
+                <p className="text-sm text-muted-foreground">Belum ada data draft Meta.</p>
+              ) : (
+                adRequests
+                  .filter((item) => item.status === "KONTEN_SELESAI" || item.metaCampaignId || item.metaDraftStatus === "FAILED" || item.metaDraftStatus === "PARTIAL")
+                  .slice(0, 30)
+                  .map((item) => (
+                    <div key={item.id} className="rounded-lg border p-3">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold">{item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotor.name}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Status draft: {item.metaDraftStatus || "NOT_CREATED"}
+                            {item.metaCampaignId ? ` • Campaign ID: ${item.metaCampaignId}` : ""}
+                          </p>
+                          {item.metaDraftError && (
+                            <p className="text-xs text-rose-600 mt-1">{item.metaDraftError}</p>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs"
+                          onClick={() => handleRetryMetaDraft(item.id)}
+                          disabled={metaRetryingAdId === item.id}
+                        >
+                          {metaRetryingAdId === item.id ? "Memproses..." : "Generate Ulang Draft Meta"}
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="whatsapp" className="space-y-4">
@@ -1621,7 +2378,7 @@ export default function AdvertiserDashboard() {
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold">Manajemen User</h2>
               <p className="text-xs text-muted-foreground">
-                Daftar user aplikasi. Tombol ON/OFF hanya untuk role Kreator dan Admin STIFIn.
+                Daftar user aplikasi. Role Promotor/Kreator/Admin STIFIn dapat dinonaktifkan, dan Promotor tertentu dapat dihapus.
               </p>
               <div className="flex items-center gap-2 pt-1 flex-wrap">
                 <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50">
@@ -1634,16 +2391,55 @@ export default function AdvertiserDashboard() {
                   Total Kreator: {creatorUsers.length}
                 </Badge>
               </div>
+              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                <p className="font-semibold text-slate-900">Backup Terakhir</p>
+                {configLastBackupAt ? (
+                  <p>
+                    {configLastAction === "restore" ? "Restore" : "Backup"} pada {formatDateTime(configLastBackupAt)}
+                  </p>
+                ) : (
+                  <p>Belum ada riwayat backup/restore dari dashboard ini.</p>
+                )}
+              </div>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              className="font-semibold"
-              onClick={() => setCreateUserDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Tambah User
-            </Button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                ref={restoreConfigInputRef}
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={(e) => handleRestoreConfigFile(e.target.files?.[0] || null)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="font-semibold"
+                onClick={handleBackupConfig}
+                disabled={backingUpConfig}
+              >
+                {backingUpConfig ? "Backup..." : "Backup Config"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="font-semibold"
+                onClick={handleRestoreConfigClick}
+                disabled={restoringConfig}
+              >
+                {restoringConfig ? "Restore..." : "Restore Config"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="font-semibold"
+                onClick={() => setCreateUserDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Tambah User
+              </Button>
+            </div>
           </div>
 
           <Card className="shadow-none border-slate-100 overflow-hidden">
@@ -1680,13 +2476,29 @@ export default function AdvertiserDashboard() {
                             {appUser.city || "-"} • {appUser.phone || "-"}
                           </p>
                         </div>
-                        {appUser.canToggle ? (
-                          <Switch
-                            checked={appUser.isEnabled}
-                            onCheckedChange={(checked) => handleToggleManagedUser(appUser.id, checked)}
-                            disabled={updatingUserId === appUser.id}
-                            className="data-[state=checked]:bg-emerald-500"
-                          />
+                        {appUser.canToggle || appUser.canDelete ? (
+                          <div className="flex items-center gap-2">
+                            {appUser.canDelete && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 text-rose-600 border-rose-200 hover:bg-rose-50"
+                                onClick={() => handleDeleteManagedUser(appUser.id)}
+                                disabled={deletingUserId === appUser.id}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                {deletingUserId === appUser.id ? "Menghapus..." : "Hapus"}
+                              </Button>
+                            )}
+                            {appUser.canToggle && (
+                              <Switch
+                                checked={appUser.isEnabled}
+                                onCheckedChange={(checked) => handleToggleManagedUser(appUser.id, checked)}
+                                disabled={updatingUserId === appUser.id}
+                                className="data-[state=checked]:bg-emerald-500"
+                              />
+                            )}
+                          </div>
                         ) : (
                           <p className="text-[11px] text-muted-foreground">Tidak bisa diubah</p>
                         )}
@@ -1910,7 +2722,19 @@ export default function AdvertiserDashboard() {
 
               {scheduleMode === "DEFAULT" && selectedAd && (
                 <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg text-[10px] text-blue-700 font-medium">
-                  <p>Sesuai permintaan promotor (Tgl {formatShortDate(selectedAd.startDate)}, Durasi {selectedAd.durationDays} hari), iklan dijadwalkan otomatis tayang 4 hari sebelumnya.</p>
+                  {(() => {
+                    const schedule = computeDefaultAdSchedule(selectedAd.startDate, selectedAd.testEndDate, selectedAd.durationDays)
+                    return (
+                      <div className="space-y-1">
+                        <p>
+                          Tanggal tes {formatTestDate(selectedAd.startDate, selectedAd.testEndDate)} (durasi {selectedAd.durationDays} hari).
+                        </p>
+                        <p>Jadwal tayang default: {formatDateTimeFromDate(schedule.start)} - {formatDateTimeFromDate(schedule.end)}.</p>
+                        <p>Deadline pembayaran: {formatDateTimeFromDate(schedule.paymentDeadline)}.</p>
+                        <p>Deadline konten selesai: {formatDateTimeFromDate(schedule.contentDeadline)}.</p>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>

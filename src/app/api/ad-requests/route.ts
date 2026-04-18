@@ -5,8 +5,23 @@ import { autoSelectBriefType, generateBriefContent, generateBriefs } from "@/lib
 import { createNotification, notifyRole, notifyStifin } from "@/lib/notifications"
 import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/lib/user-enabled"
 import { syncScheduledAdsToRunning } from "@/lib/ad-status"
+import { buildCampaignCode, buildCampaignName } from "@/lib/campaign-naming"
 
 const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
+const MIN_AUTO_SALDO_APPLY = 100_000
+
+async function generateUniqueCampaignCode(): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = buildCampaignCode(6)
+    const exists = await db.adRequest.findFirst({
+      where: { campaignCode: code },
+      select: { id: true },
+    })
+    if (!exists) return code
+  }
+  // extremely rare fallback
+  return `${Date.now().toString(36).toUpperCase()}`
+}
 
 export async function GET(req: Request) {
   try {
@@ -61,61 +76,69 @@ export async function GET(req: Request) {
 
     if (unassignedContentQueue.length > 0) {
       for (const legacyAd of unassignedContentQueue) {
-        const assigned = await db.$transaction(async (tx) => {
-          const creators = await tx.user.findMany({
-            where: { role: "KONTEN_KREATOR" },
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        try {
+          const assigned = await db.$transaction(async (tx) => {
+            const creators = await tx.user.findMany({
+              where: { role: "KONTEN_KREATOR" },
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            })
+            if (creators.length === 0) return null
+
+            const enabledSetting = await tx.systemSetting.findUnique({
+              where: { key: USER_ENABLED_SETTING_KEY },
+            })
+            const enabledMap = parseUserEnabledMap(enabledSetting?.value)
+            const availableCreators = creators.filter((creator) => isUserEnabled(enabledMap, creator.id))
+            if (availableCreators.length === 0) return null
+
+            const rotation = await tx.systemSetting.findUnique({
+              where: { key: CREATOR_ROTATION_KEY },
+            })
+            const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
+            const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
+            const nextIndex = (lastIndex + 1) % availableCreators.length
+            const assignedCreator = availableCreators[nextIndex]
+
+            const updated = await tx.adRequest.updateMany({
+              where: { id: legacyAd.id, contentCreatorId: null },
+              data: { contentCreatorId: assignedCreator.id },
+            })
+
+            if (updated.count === 0) return null
+
+            await tx.systemSetting.upsert({
+              where: { key: CREATOR_ROTATION_KEY },
+              update: { value: String(nextIndex) },
+              create: {
+                key: CREATOR_ROTATION_KEY,
+                value: String(nextIndex),
+              },
+            })
+
+            return assignedCreator
           })
-          if (creators.length === 0) return null
 
-          const enabledSetting = await tx.systemSetting.findUnique({
-            where: { key: USER_ENABLED_SETTING_KEY },
-          })
-          const enabledMap = parseUserEnabledMap(enabledSetting?.value)
-          const availableCreators = creators.filter((creator) => isUserEnabled(enabledMap, creator.id))
-          if (availableCreators.length === 0) return null
-
-          const rotation = await tx.systemSetting.findUnique({
-            where: { key: CREATOR_ROTATION_KEY },
-          })
-          const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
-          const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
-          const nextIndex = (lastIndex + 1) % availableCreators.length
-          const assignedCreator = availableCreators[nextIndex]
-
-          const updated = await tx.adRequest.updateMany({
-            where: { id: legacyAd.id, contentCreatorId: null },
-            data: { contentCreatorId: assignedCreator.id },
-          })
-
-          if (updated.count === 0) return null
-
-          await tx.systemSetting.upsert({
-            where: { key: CREATOR_ROTATION_KEY },
-            update: { value: String(nextIndex) },
-            create: {
-              key: CREATOR_ROTATION_KEY,
-              value: String(nextIndex),
-            },
-          })
-
-          return assignedCreator
-        })
-
-        if (assigned) {
-          await createNotification(
-            assigned.id,
-            "Pengajuan Iklan Baru",
-            `${legacyAd.promotor.name} dari ${legacyAd.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
-            "AD_REQUEST",
-            legacyAd.id
-          )
+          if (assigned) {
+            await createNotification(
+              assigned.id,
+              "Pengajuan Iklan Baru",
+              `${legacyAd.promotor.name} dari ${legacyAd.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
+              "AD_REQUEST",
+              legacyAd.id
+            )
+          }
+        } catch (repairError) {
+          console.error("Auto-repair assignment warning:", repairError)
         }
       }
     }
 
     // Keep running-state synchronized even when background scheduler is not available.
-    await syncScheduledAdsToRunning()
+    try {
+      await syncScheduledAdsToRunning()
+    } catch (syncError) {
+      console.error("Sync scheduled ads warning:", syncError)
+    }
 
     const adRequests = await db.adRequest.findMany({
       where,
@@ -154,7 +177,7 @@ export async function POST(req: Request) {
 
     const totalBudget = dailyBudget * durationDays
     const ppn = Math.round(totalBudget * 0.11)
-    const totalPayment = totalBudget + ppn
+    const grossPayment = totalBudget + ppn
 
     const startDateObj = new Date(startDate)
     const testEndDateObj = testEndDate ? new Date(testEndDate) : null
@@ -212,8 +235,36 @@ export async function POST(req: Request) {
     const briefType = "JJ & VO"
     const briefContent = `[ BRIEF JEDAG-JEDUG (JJ) ]\n${finalJJ}\n\n------------------------------------------------------------\n\n[ BRIEF VOICE OVER (VO) ]\n${finalVO}`
 
+    const completedAds = await db.adRequest.findMany({
+      where: {
+        promotorId: session.id,
+        status: { in: ["SELESAI", "FINAL"] },
+        adReport: { isNot: null },
+      },
+      select: {
+        totalBudget: true,
+        adReport: { select: { amountSpent: true } },
+      },
+    })
+    const totalLeftover = completedAds.reduce((sum, item) => {
+      const spent = item.adReport?.amountSpent ?? null
+      if (spent === null || spent === undefined) return sum
+      return sum + Math.max(item.totalBudget - spent, 0)
+    }, 0)
+    const usedSaldoAgg = await db.adRequest.aggregate({
+      where: { promotorId: session.id },
+      _sum: { saldoApplied: true },
+    })
+    const usedSaldo = usedSaldoAgg._sum.saldoApplied || 0
+    const availableSaldo = Math.max(totalLeftover - usedSaldo, 0)
+    const saldoApplied =
+      availableSaldo >= MIN_AUTO_SALDO_APPLY ? Math.min(availableSaldo, grossPayment) : 0
+    const totalPayment = Math.max(grossPayment - saldoApplied, 0)
+
+    const campaignCode = await generateUniqueCampaignCode()
     const adRequest = await db.adRequest.create({
       data: {
+        campaignCode,
         city,
         startDate: startDateObj,
         testEndDate: testEndDateObj,
@@ -222,6 +273,7 @@ export async function POST(req: Request) {
         totalBudget,
         ppn,
         totalPayment,
+        saldoApplied,
         briefType,
         briefContent,
         briefVO: finalVO,
@@ -234,20 +286,27 @@ export async function POST(req: Request) {
       },
     })
 
+    const campaignName = buildCampaignName({
+      city,
+      startDate: startDateObj,
+      promotorName: adRequest.promotor.name,
+      campaignCode,
+    })
+
 
 
     // Notify advertiser
     await notifyRole(
       "ADVERTISER",
       "Pengajuan Iklan Baru",
-      `${adRequest.promotor.name} dari ${city} mengajukan iklan. Menunggu pembayaran & konten.`,
+      `${adRequest.promotor.name} dari ${city} mengajukan iklan. Campaign: ${campaignName}. Menunggu pembayaran & konten.`,
       "AD_REQUEST",
       adRequest.id
     )
 
     await notifyStifin(
       "Pengajuan Iklan Baru",
-      `Promotor ${adRequest.promotor.name} dari ${city} mengajukan iklan senilai Rp ${totalPayment.toLocaleString("id-ID")}`,
+      `Promotor ${adRequest.promotor.name} dari ${city} mengajukan iklan senilai Rp ${totalPayment.toLocaleString("id-ID")}${saldoApplied > 0 ? ` (saldo terpakai Rp ${saldoApplied.toLocaleString("id-ID")})` : ""}`,
       "AD_REQUEST"
     )
 

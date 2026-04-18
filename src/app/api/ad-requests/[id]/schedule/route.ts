@@ -4,6 +4,18 @@ import { db } from "@/lib/db"
 import { createNotification } from "@/lib/notifications"
 import { sendWhatsApp } from "@/lib/whatsapp"
 
+function computeMaxAdEndDate(testDate: Date): Date {
+  // H-1 dari tanggal tes, jam 21:00
+  const maxEnd = new Date(testDate)
+  maxEnd.setDate(testDate.getDate() - 1)
+  maxEnd.setHours(21, 0, 0, 0)
+  return maxEnd
+}
+
+function getTestReferenceDate(startDate: Date, endDate: Date | null): Date {
+  return endDate ?? startDate
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -15,7 +27,7 @@ export async function POST(
     }
 
     const { id } = await params
-    const { adStartDate, adEndDate } = await req.json()
+    const { adStartDate, adEndDate, mode } = await req.json()
 
     if (!adStartDate || !adEndDate) {
       return NextResponse.json({ error: "Tanggal mulai dan selesai wajib diisi" }, { status: 400 })
@@ -41,6 +53,20 @@ export async function POST(
 
     if (adRequest.status !== "KONTEN_SELESAI") {
       return NextResponse.json({ error: "Konten belum selesai, tidak dapat dijadwalkan" }, { status: 400 })
+    }
+
+    if (mode === "DEFAULT") {
+      const maxAllowedEndDate = computeMaxAdEndDate(
+        getTestReferenceDate(new Date(adRequest.startDate), adRequest.testEndDate ? new Date(adRequest.testEndDate) : null),
+      )
+      if (endDate.getTime() > maxAllowedEndDate.getTime()) {
+        return NextResponse.json(
+          {
+            error: `Waktu berakhir tayang melanggar batas default. Maksimal ${maxAllowedEndDate.toLocaleString("id-ID")} (H-1 jam 21:00 dari tanggal tes).`,
+          },
+          { status: 400 },
+        )
+      }
     }
 
     const updated = await db.adRequest.update({

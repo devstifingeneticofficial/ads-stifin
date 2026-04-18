@@ -15,12 +15,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Nama wajib diisi" }, { status: 400 })
     }
 
+    const currentUser = await db.user.findUnique({
+      where: { id: session.id },
+      select: { id: true, role: true, phone: true, city: true },
+    })
+
+    if (!currentUser) {
+      return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 })
+    }
+
+    const nextName = String(name).trim()
+    const incomingPhone = typeof phone === "string" ? phone.trim() : undefined
+    const incomingCity = typeof city === "string" ? city.trim() : undefined
+
+    const nextPhone =
+      incomingPhone === undefined || incomingPhone === ""
+        ? currentUser.phone
+        : incomingPhone
+
+    const nextCity =
+      incomingCity === undefined || incomingCity === ""
+        ? currentUser.city
+        : incomingCity
+
+    if (currentUser.role === "PROMOTOR" && !nextPhone) {
+      return NextResponse.json({ error: "Nomor WhatsApp promotor wajib diisi" }, { status: 400 })
+    }
+
     const updated = await db.user.update({
       where: { id: session.id },
       data: {
-        name,
-        phone: phone || null,
-        city: city || null,
+        name: nextName,
+        phone: nextPhone || null,
+        city: nextCity || null,
       },
     })
 

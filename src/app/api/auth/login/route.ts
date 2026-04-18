@@ -6,6 +6,7 @@ import {
   mustChangePassword,
   parseForcePasswordChangeMap,
 } from "@/lib/force-password-change"
+import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/lib/user-enabled"
 
 export async function POST(req: Request) {
   try {
@@ -32,6 +33,16 @@ export async function POST(req: Request) {
 
     if (!isValid) {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
+    }
+
+    if (["PROMOTOR", "KONTEN_KREATOR", "STIFIN"].includes(user.role)) {
+      const enabledSetting = await db.systemSetting.findUnique({
+        where: { key: USER_ENABLED_SETTING_KEY },
+      })
+      const enabledMap = parseUserEnabledMap(enabledSetting?.value)
+      if (!isUserEnabled(enabledMap, user.id)) {
+        return NextResponse.json({ error: "Akun Anda sedang dinonaktifkan. Hubungi Advertiser." }, { status: 403 })
+      }
     }
 
     const forceSetting = await db.systemSetting.findUnique({

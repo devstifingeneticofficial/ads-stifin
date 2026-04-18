@@ -17,6 +17,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
+    "db:backup:config": "node prisma/backup-config.mjs",
+    "db:restore:config": "node prisma/restore-config.mjs",
     "seed": "bun run prisma/seed.ts"
   },
   "dependencies": {

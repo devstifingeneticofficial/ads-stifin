@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { createNotification, notifyRole } from "@/lib/notifications"
 import { sendWhatsApp } from "@/lib/whatsapp"
+import { generateMetaDraftForAdRequest } from "@/lib/meta-ads"
 
 export async function POST(
   req: Request,
@@ -103,6 +104,10 @@ export async function POST(
         
       await sendWhatsApp(updated.promotor.phone, message)
     }
+
+    // Auto-generate Meta Ads draft (non-blocking for main business flow).
+    // If it fails, status + error will be saved in adRequest.metaDraft* fields.
+    await generateMetaDraftForAdRequest(id)
 
     return NextResponse.json(updated)
   } catch (error) {

@@ -27,6 +27,7 @@ model User {
 
 model AdRequest {
   id              String          @id @default(cuid())
+  campaignCode    String?         @unique
   city            String
   startDate       DateTime
   testEndDate     DateTime?
@@ -35,6 +36,7 @@ model AdRequest {
   totalBudget     Int
   ppn             Int
   totalPayment    Int
+  saldoApplied    Int             @default(0)
   status          String          @default("MENUNGGU_PEMBAYARAN")
   briefType       String?
   briefContent    String?
@@ -53,6 +55,13 @@ model AdRequest {
   promotorResult  PromotorResult?
   creatorPayoutItem CreatorPayoutItem?
   promotorBonusItems PromotorBonusItem[]
+  metaCampaignId  String?
+  metaAdSetId     String?
+  metaAdIds       String?
+  metaDraftStatus String?         @default("NOT_CREATED") // NOT_CREATED, PENDING, SUCCESS, FAILED
+  metaDraftError  String?
+  metaDraftCreatedAt DateTime?
+  metaDraftUpdatedAt DateTime?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }

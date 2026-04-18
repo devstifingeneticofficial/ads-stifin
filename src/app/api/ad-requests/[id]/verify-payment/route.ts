@@ -28,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: "Pengajuan tidak ditemukan" }, { status: 404 })
     }
 
-    if (adRequest.status !== "MENUNGGU_PEMBAYARAN") {
+    if (!["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(adRequest.status)) {
       return NextResponse.json({ error: "Status pengajuan tidak valid" }, { status: 400 })
     }
 
