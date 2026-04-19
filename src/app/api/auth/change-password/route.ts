@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
+import bcrypt from "bcryptjs"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
   parseForcePasswordChangeMap,
@@ -20,8 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Password minimal 6 karakter" }, { status: 400 })
     }
 
-    const bcrypt = await import("bcryptjs")
-    const hashedPassword = await bcrypt.default.hash(newPassword, 10)
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
 
     await db.user.update({
       where: { id: session.id },
@@ -47,4 +47,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Gagal mengganti password" }, { status: 500 })
   }
 }
-

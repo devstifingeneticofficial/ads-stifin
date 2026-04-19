@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import bcrypt from "bcryptjs"
 
 export async function POST(req: Request) {
   try {
@@ -18,8 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Pendaftaran mandiri hanya untuk role Promotor" }, { status: 400 })
     }
 
-    const bcrypt = await import("bcryptjs")
-    const hashedPassword = await bcrypt.default.hash(password, 10)
+    const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await db.user.create({
       data: {

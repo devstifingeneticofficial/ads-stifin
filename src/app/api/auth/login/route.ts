@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { attachAuthCookie } from "@/lib/auth-cookie"
 import { db } from "@/lib/db"
+import bcrypt from "bcryptjs"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
   mustChangePassword,
@@ -25,8 +26,7 @@ export async function POST(req: Request) {
     // Password check: plain text for demo, or bcrypt hash
     let isValid = false
     if (user.password.startsWith("$2")) {
-      const bcrypt = await import("bcryptjs")
-      isValid = await bcrypt.default.compare(password, user.password)
+      isValid = await bcrypt.compare(password, user.password)
     } else {
       isValid = user.password === password
     }

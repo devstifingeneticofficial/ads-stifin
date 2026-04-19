@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/auth"
 import { db } from "@/lib/db"
+import bcrypt from "bcryptjs"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
   parseForcePasswordChangeMap,
@@ -30,8 +31,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email sudah terdaftar" }, { status: 400 })
     }
 
-    const bcrypt = await import("bcryptjs")
-    const hashedPassword = await bcrypt.default.hash(password, 10)
+    const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await db.user.create({
       data: {
