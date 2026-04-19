@@ -10,6 +10,11 @@ interface User {
   city: string | null
   phone: string | null
   mustChangePassword?: boolean
+  actorId?: string
+  actorName?: string
+  actorEmail?: string
+  actorRole?: string
+  isActingAs?: boolean
 }
 
 interface AuthContextType {

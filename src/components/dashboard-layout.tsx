@@ -1,7 +1,7 @@
 "use client"
 
 import { useAuth } from "@/lib/auth-context"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,6 +21,7 @@ import {
   User as UserIcon,
   Users,
   AlertTriangle,
+  ArrowLeftRight,
 } from "lucide-react"
 import {
   Dialog,
@@ -69,6 +70,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [newPassword, setNewPassword] = useState("")
   const [confirmNewPassword, setConfirmNewPassword] = useState("")
   const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [switchableProfiles, setSwitchableProfiles] = useState<Array<{ id: string; name: string; email: string; city?: string | null }>>([])
+  const [loadingProfiles, setLoadingProfiles] = useState(false)
+  const [switchingProfileId, setSwitchingProfileId] = useState<string | null>(null)
 
   useEffect(() => {
     if (user) {
@@ -87,6 +91,32 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       setEditCity((user as any).city || "")
     }
   }, [profileDialogOpen, user])
+
+  const canUseProfileSwitch = !!user && ((user.actorRole || user.role) === "STIFIN")
+
+  const fetchSwitchableProfiles = useCallback(async () => {
+    if (!canUseProfileSwitch) {
+      setSwitchableProfiles([])
+      return
+    }
+    setLoadingProfiles(true)
+    try {
+      const res = await fetch("/api/auth/switch-profile")
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal mengambil akun promotor terhubung")
+      setSwitchableProfiles(data.profiles || [])
+    } catch {
+      setSwitchableProfiles([])
+    } finally {
+      setLoadingProfiles(false)
+    }
+  }, [canUseProfileSwitch])
+
+  useEffect(() => {
+    if (profileDialogOpen) {
+      fetchSwitchableProfiles()
+    }
+  }, [profileDialogOpen, fetchSwitchableProfiles])
 
   useEffect(() => {
     const shouldForcePasswordChange =
@@ -152,6 +182,26 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       toast.error(error?.message || "Gagal mengganti password")
     } finally {
       setIsChangingPassword(false)
+    }
+  }
+
+  const handleSwitchProfile = async (targetUserId: string | null) => {
+    setSwitchingProfileId(targetUserId || "self")
+    try {
+      const res = await fetch("/api/auth/switch-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal switch profile")
+      await refreshSession()
+      setProfileDialogOpen(false)
+      toast.success(targetUserId ? "Berhasil pindah ke profil promotor" : "Kembali ke profil Admin STIFIn")
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal switch profile")
+    } finally {
+      setSwitchingProfileId(null)
     }
   }
 
@@ -354,6 +404,56 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   placeholder="Contoh: Bandung"
                 />
               </div>
+              {canUseProfileSwitch && (
+                <div className="grid gap-2 border rounded-md p-3 bg-slate-50">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Switch Profile</p>
+                      <p className="text-xs text-slate-500">
+                        Admin STIFIn bisa masuk ke akun promotor yang terhubung.
+                      </p>
+                    </div>
+                    <ArrowLeftRight className="w-4 h-4 text-slate-500" />
+                  </div>
+                  {(user as any).isActingAs && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => handleSwitchProfile(null)}
+                      disabled={switchingProfileId === "self"}
+                    >
+                      {switchingProfileId === "self" ? "Memproses..." : "Kembali ke Profil Admin"}
+                    </Button>
+                  )}
+                  <div className="max-h-32 overflow-auto space-y-2 pr-1">
+                    {loadingProfiles ? (
+                      <p className="text-xs text-slate-500">Memuat daftar promotor...</p>
+                    ) : switchableProfiles.length === 0 ? (
+                      <p className="text-xs text-slate-500">Belum ada akun promotor yang terhubung.</p>
+                    ) : (
+                      switchableProfiles.map((profile) => (
+                        <Button
+                          key={profile.id}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="w-full justify-between"
+                          onClick={() => handleSwitchProfile(profile.id)}
+                          disabled={switchingProfileId === profile.id}
+                        >
+                          <span className="truncate text-left">
+                            {profile.name}
+                            {profile.city ? ` • ${profile.city}` : ""}
+                          </span>
+                          <span className="text-[10px] text-slate-500 ml-2 truncate">{profile.email}</span>
+                        </Button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { AUTH_COOKIE_NAME, AUTH_MAX_AGE_SECONDS, createToken, getSession } from "@/lib/auth"
+import { getSession } from "@/lib/auth"
+import { attachAuthCookie } from "@/lib/auth-cookie"
 import { db } from "@/lib/db"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
@@ -16,7 +17,9 @@ export async function GET() {
 
     // Selalu ambil data terbaru dari DB agar perubahan profil (seperti nomor WA) 
     // langsung terlihat tanpa perlu login ulang.
-    const [user, forceSetting] = await Promise.all([
+    const actorId = session.actorId || session.id
+
+    const [user, actorUser, forceSetting] = await Promise.all([
       db.user.findUnique({
         where: { id: session.id },
         select: {
@@ -28,12 +31,21 @@ export async function GET() {
           phone: true,
         },
       }),
+      db.user.findUnique({
+        where: { id: actorId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+        },
+      }),
       db.systemSetting.findUnique({
         where: { key: FORCE_PASSWORD_CHANGE_KEY },
       }),
     ])
 
-    if (!user) {
+    if (!user || !actorUser) {
       return NextResponse.json({ user: null })
     }
 
@@ -43,23 +55,25 @@ export async function GET() {
       user: {
         ...user,
         mustChangePassword: mustChangePassword(forceMap, user.id),
+        actorId: actorUser.id,
+        actorName: actorUser.name,
+        actorEmail: actorUser.email,
+        actorRole: actorUser.role,
+        isActingAs: actorUser.id !== user.id,
       },
     })
 
-    const refreshedToken = createToken({
+    attachAuthCookie(response, {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       city: user.city,
-    })
-
-    response.cookies.set(AUTH_COOKIE_NAME, refreshedToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: AUTH_MAX_AGE_SECONDS,
+      actorId: actorUser.id,
+      actorName: actorUser.name,
+      actorEmail: actorUser.email,
+      actorRole: actorUser.role,
+      isActingAs: actorUser.id !== user.id,
     })
 
     return response

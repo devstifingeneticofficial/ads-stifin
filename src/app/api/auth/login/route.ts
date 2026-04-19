@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { AUTH_COOKIE_NAME, AUTH_MAX_AGE_SECONDS, createToken } from "@/lib/auth"
+import { attachAuthCookie } from "@/lib/auth-cookie"
 import { db } from "@/lib/db"
 import {
   FORCE_PASSWORD_CHANGE_KEY,
@@ -51,14 +51,6 @@ export async function POST(req: Request) {
     const forceMap = parseForcePasswordChangeMap(forceSetting?.value)
     const shouldForcePasswordChange = mustChangePassword(forceMap, user.id)
 
-    const token = createToken({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      city: user.city,
-    })
-
     const response = NextResponse.json({
       success: true,
       user: {
@@ -67,16 +59,27 @@ export async function POST(req: Request) {
         name: user.name,
         role: user.role,
         city: user.city,
+        phone: user.phone,
         mustChangePassword: shouldForcePasswordChange,
+        actorId: user.id,
+        actorName: user.name,
+        actorEmail: user.email,
+        actorRole: user.role,
+        isActingAs: false,
       },
     })
 
-    response.cookies.set(AUTH_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: AUTH_MAX_AGE_SECONDS,
+    attachAuthCookie(response, {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      city: user.city,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorName: user.name,
+      actorRole: user.role,
+      isActingAs: false,
     })
 
     return response

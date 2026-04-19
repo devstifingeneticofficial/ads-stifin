@@ -23,6 +23,20 @@ model User {
   contentAssignments AdRequest[] @relation("ContentCreatorAssignments")
   creatorPayoutBatches CreatorPayoutBatch[]
   promotorBonusBatches PromotorBonusBatch[]
+  ownedProfileLinks UserProfileLink[] @relation("ProfileLinkOwner")
+  linkedAsProfile   UserProfileLink[] @relation("ProfileLinkProfile")
+}
+
+model UserProfileLink {
+  id        String   @id @default(cuid())
+  ownerId   String
+  profileId String
+  createdAt DateTime @default(now())
+
+  owner   User @relation("ProfileLinkOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  profile User @relation("ProfileLinkProfile", fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, profileId])
 }
 
 model AdRequest {

@@ -6,7 +6,7 @@ import {
   parseForcePasswordChangeMap,
 } from "@/lib/force-password-change"
 
-const ALLOWED_ROLES = new Set(["KONTEN_KREATOR", "STIFIN"])
+const ALLOWED_ROLES = new Set(["KONTEN_KREATOR", "STIFIN", "PROMOTOR"])
 
 export async function POST(req: Request) {
   try {

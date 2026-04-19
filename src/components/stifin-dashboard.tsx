@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { compressImage } from "@/lib/utils"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -328,6 +329,17 @@ export default function StifinDashboard() {
   const [bonusDisburseDialogOpen, setBonusDisburseDialogOpen] = useState(false)
   const [bonusTransferProofUrl, setBonusTransferProofUrl] = useState("")
   const [bonusProofUploading, setBonusProofUploading] = useState(false)
+  const [proofPreviewOpen, setProofPreviewOpen] = useState(false)
+  const [proofPreviewUrl, setProofPreviewUrl] = useState("")
+  const [proofPreviewTitle, setProofPreviewTitle] = useState("Bukti Transfer")
+
+  const openProofPreview = (url: string, title = "Bukti Transfer") => {
+    setProofPreviewUrl(url)
+    setProofPreviewTitle(title)
+    setProofPreviewOpen(true)
+  }
+
+  const isPdfProof = proofPreviewUrl.toLowerCase().includes(".pdf")
 
   // ── Promotor aggregation ───────────────────────────────────────────────────
   const promotorData = useMemo(() => {
@@ -473,8 +485,11 @@ export default function StifinDashboard() {
     if (!file) return
     setProofUploading(true)
     try {
+      const isImage = file.type.startsWith("image/")
+      const uploadFile = isImage ? await compressImage(file) : file
+
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", uploadFile)
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -552,8 +567,11 @@ export default function StifinDashboard() {
     if (!file) return
     setBonusProofUploading(true)
     try {
+      const isImage = file.type.startsWith("image/")
+      const uploadFile = isImage ? await compressImage(file) : file
+
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", uploadFile)
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -1788,14 +1806,13 @@ export default function StifinDashboard() {
                     </summary>
                     <div className="mt-3 space-y-2">
                       {batch.transferProofUrl && (
-                        <a
-                          href={batch.transferProofUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openProofPreview(batch.transferProofUrl!, `Bukti Transfer - ${batch.invoiceNumber || "Invoice"}`)}
                           className="inline-block text-xs text-blue-600 hover:underline"
                         >
                           Lihat bukti transfer
-                        </a>
+                        </button>
                       )}
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
@@ -1952,14 +1969,13 @@ export default function StifinDashboard() {
                     </summary>
                     <div className="mt-3 space-y-2">
                       {batch.transferProofUrl && (
-                        <a
-                          href={batch.transferProofUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openProofPreview(batch.transferProofUrl!, `Bukti Transfer Bonus - ${batch.invoiceNumber || "Invoice"}`)}
                           className="inline-block text-xs text-blue-600 hover:underline"
                         >
                           Lihat bukti transfer
-                        </a>
+                        </button>
                       )}
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
@@ -2008,14 +2024,13 @@ export default function StifinDashboard() {
                 <p className="text-xs text-muted-foreground">Mengunggah bukti transfer...</p>
               )}
               {transferProofUrl && (
-                <a
-                  href={transferProofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => openProofPreview(transferProofUrl, "Bukti Transfer (Gaji Kreator)")}
                   className="text-xs text-blue-600 hover:underline"
                 >
                   Bukti transfer berhasil diunggah, klik untuk lihat
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -2068,14 +2083,13 @@ export default function StifinDashboard() {
                 <p className="text-xs text-muted-foreground">Mengunggah bukti transfer bonus...</p>
               )}
               {bonusTransferProofUrl && (
-                <a
-                  href={bonusTransferProofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => openProofPreview(bonusTransferProofUrl, "Bukti Transfer Bonus")}
                   className="text-xs text-blue-600 hover:underline"
                 >
                   Bukti transfer bonus berhasil diunggah, klik untuk lihat
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -2093,6 +2107,34 @@ export default function StifinDashboard() {
               disabled={payingBonus || bonusProofUploading || !bonusTransferProofUrl}
             >
               {payingBonus ? "Memproses..." : "Konfirmasi Bayar Bonus"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={proofPreviewOpen} onOpenChange={setProofPreviewOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{proofPreviewTitle}</DialogTitle>
+            <DialogDescription>Preview bukti transfer tanpa membuka tab baru.</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-slate-50 overflow-hidden">
+            {isPdfProof ? (
+              <iframe
+                title={proofPreviewTitle}
+                src={proofPreviewUrl}
+                className="w-full h-[65vh] bg-white"
+              />
+            ) : (
+              <img src={proofPreviewUrl} alt={proofPreviewTitle} className="w-full h-auto max-h-[65vh] object-contain bg-white" />
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => window.open(proofPreviewUrl, "_blank", "noopener,noreferrer")}>
+              Buka di tab baru
+            </Button>
+            <Button type="button" onClick={() => setProofPreviewOpen(false)}>
+              Tutup
             </Button>
           </DialogFooter>
         </DialogContent>

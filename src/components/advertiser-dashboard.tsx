@@ -28,6 +28,8 @@ import {
   RefreshCcw,
   PlugZap,
   Trash2,
+  Link2,
+  Unlink2,
 } from "lucide-react"
 
 import {
@@ -216,7 +218,20 @@ interface ManagedUser {
   isEnabled: boolean
 }
 
-type CreateManagedUserRole = "KONTEN_KREATOR" | "STIFIN"
+interface LinkedAccountItem {
+  owner: { id: string; name: string; email: string }
+  profile: { id: string; name: string; email: string }
+}
+
+interface LinkableAccountUser {
+  id: string
+  name: string
+  email: string
+  city: string | null
+  phone: string | null
+}
+
+type CreateManagedUserRole = "KONTEN_KREATOR" | "STIFIN" | "PROMOTOR"
 
 interface GlobalAnnouncement {
   id: string
@@ -316,6 +331,17 @@ const formatCampaignLabel = (ad: AdRequest): string =>
     promotorName: ad.promotor.name,
     campaignCode: ad.campaignCode || undefined,
   })
+
+const buildCalendarCopyText = (ad: AdRequest): string => {
+  const targetDate = new Date(ad.startDate)
+  const day = targetDate.toLocaleDateString("id-ID", { weekday: "long" })
+  const date = targetDate.toLocaleDateString("id-ID", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })
+  return `📅 ${day}, ${date} di Kota ${ad.city}!`
+}
 
 const formatTestDate = (start: string, end?: string | null) => {
   const s = new Date(start)
@@ -476,6 +502,13 @@ export default function AdvertiserDashboard() {
   const [payoutMonitor, setPayoutMonitor] = useState<PayoutMonitorData | null>(null)
   const [bonusMonitor, setBonusMonitor] = useState<BonusMonitorData | null>(null)
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
+  const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountItem[]>([])
+  const [stifinAdmins, setStifinAdmins] = useState<LinkableAccountUser[]>([])
+  const [promotorUsers, setPromotorUsers] = useState<LinkableAccountUser[]>([])
+  const [selectedLinkAdminId, setSelectedLinkAdminId] = useState("")
+  const [selectedLinkPromotorId, setSelectedLinkPromotorId] = useState("")
+  const [linkingAccount, setLinkingAccount] = useState(false)
+  const [unlinkingKey, setUnlinkingKey] = useState<string | null>(null)
   const [usersLoading, setUsersLoading] = useState(false)
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
@@ -512,6 +545,9 @@ export default function AdvertiserDashboard() {
   const [metaTesting, setMetaTesting] = useState(false)
   const [metaSyncingPerformance, setMetaSyncingPerformance] = useState(false)
   const [metaSavingTemplate, setMetaSavingTemplate] = useState(false)
+  const [proofPreviewOpen, setProofPreviewOpen] = useState(false)
+  const [proofPreviewUrl, setProofPreviewUrl] = useState("")
+  const [proofPreviewTitle, setProofPreviewTitle] = useState("Bukti Transfer")
   const [metaRetryingAdId, setMetaRetryingAdId] = useState<string | null>(null)
   const [metaDraftMode, setMetaDraftMode] = useState<MetaDraftMode>("GENERATE")
   const restoreConfigInputRef = useRef<HTMLInputElement | null>(null)
@@ -601,6 +637,12 @@ export default function AdvertiserDashboard() {
   const creatorUsers = managedUsers.filter((u) => u.role === "KONTEN_KREATOR")
   const activeCreatorCount = creatorUsers.filter((u) => u.isEnabled).length
   const inactiveCreatorCount = Math.max(creatorUsers.length - activeCreatorCount, 0)
+  const stifinLinkCounts = linkedAccounts.reduce<Record<string, number>>((acc, link) => {
+    acc[link.owner.id] = (acc[link.owner.id] || 0) + 1
+    return acc
+  }, {})
+  const selectedAdminLinkCount = selectedLinkAdminId ? stifinLinkCounts[selectedLinkAdminId] || 0 : 0
+  const canAddSelectedAdminLink = selectedAdminLinkCount < 2
   const metaPreviewSample = (() => {
     const latest = adRequests[0]
     if (!latest) {
@@ -722,6 +764,25 @@ export default function AdvertiserDashboard() {
     }
   }, [])
 
+  const fetchManagedLinks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users/manage/links")
+      if (!res.ok) throw new Error("Gagal mengambil relasi akun")
+      const data = await res.json()
+      setLinkedAccounts(data.links || [])
+      setStifinAdmins(data.admins || [])
+      setPromotorUsers(data.promotors || [])
+      if (!selectedLinkAdminId && data.admins?.[0]?.id) {
+        setSelectedLinkAdminId(data.admins[0].id)
+      }
+      if (!selectedLinkPromotorId && data.promotors?.[0]?.id) {
+        setSelectedLinkPromotorId(data.promotors[0].id)
+      }
+    } catch {
+      // silent fail
+    }
+  }, [selectedLinkAdminId, selectedLinkPromotorId])
+
   const fetchAnnouncements = useCallback(async () => {
     setAnnouncementsLoading(true)
     try {
@@ -760,10 +821,11 @@ export default function AdvertiserDashboard() {
       fetchPayoutMonitor()
       fetchBonusMonitor()
       fetchManagedUsers()
+      fetchManagedLinks()
       fetchAnnouncements()
       fetchMetaTemplate()
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchAnnouncements, fetchMetaTemplate])
+  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchManagedLinks, fetchAnnouncements, fetchMetaTemplate])
 
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
@@ -808,6 +870,14 @@ export default function AdvertiserDashboard() {
       fetchBriefTemplates()
     } catch { toast.error("Gagal menghapus") }
   }
+
+  const openProofPreview = (url: string, title = "Bukti Transfer") => {
+    setProofPreviewUrl(url)
+    setProofPreviewTitle(title)
+    setProofPreviewOpen(true)
+  }
+
+  const isPdfProof = proofPreviewUrl.toLowerCase().includes(".pdf")
 
   const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -948,11 +1018,63 @@ export default function AdvertiserDashboard() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Gagal menghapus user")
       setManagedUsers((prev) => prev.filter((u) => u.id !== userId))
+      setLinkedAccounts((prev) =>
+        prev.filter((item) => item.owner.id !== userId && item.profile.id !== userId)
+      )
       toast.success("User promotor berhasil dihapus")
     } catch (error: any) {
       toast.error(error?.message || "Gagal menghapus user")
     } finally {
       setDeletingUserId(null)
+    }
+  }
+
+  const handleLinkAdminPromotor = async () => {
+    if (!selectedLinkAdminId || !selectedLinkPromotorId) {
+      toast.error("Pilih admin STIFIn dan promotor terlebih dahulu")
+      return
+    }
+    if (!canAddSelectedAdminLink) {
+      toast.error("Admin terpilih sudah memiliki 2 relasi promotor")
+      return
+    }
+    setLinkingAccount(true)
+    try {
+      const res = await fetch("/api/users/manage/links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminId: selectedLinkAdminId,
+          promotorId: selectedLinkPromotorId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menghubungkan akun")
+      toast.success("Akun admin dan promotor berhasil dihubungkan")
+      fetchManagedLinks()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menghubungkan akun")
+    } finally {
+      setLinkingAccount(false)
+    }
+  }
+
+  const handleUnlinkAdminPromotor = async (adminId: string, promotorId: string) => {
+    const key = `${adminId}:${promotorId}`
+    setUnlinkingKey(key)
+    try {
+      const res = await fetch(
+        `/api/users/manage/links?adminId=${encodeURIComponent(adminId)}&promotorId=${encodeURIComponent(promotorId)}`,
+        { method: "DELETE" }
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal melepas relasi akun")
+      toast.success("Relasi akun admin-promotor berhasil dilepas")
+      fetchManagedLinks()
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal melepas relasi akun")
+    } finally {
+      setUnlinkingKey(null)
     }
   }
 
@@ -1078,6 +1200,7 @@ export default function AdvertiserDashboard() {
       setCreateUserDialogOpen(false)
       resetCreateUserForm()
       fetchManagedUsers()
+      fetchManagedLinks()
     } catch (error: any) {
       toast.error(error?.message || "Gagal menambahkan user")
     } finally {
@@ -1446,6 +1569,14 @@ export default function AdvertiserDashboard() {
                             >
                               Copy
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={() => handleCopyText(buildCalendarCopyText(ad), "Teks tanggal")}
+                            >
+                              Copy Teks Tanggal
+                            </Button>
                           </div>
                         </div>
                         <div className="shrink-0 space-y-1">
@@ -1529,8 +1660,13 @@ export default function AdvertiserDashboard() {
                             <a href={waChannelLink || "#"} target="_blank" rel="noopener noreferrer"><Download className="h-4 w-4" /> DOWNLOAD KONTEN</a>
                           </Button>
                           {ad.paymentProofUrl && (
-                            <Button size="sm" variant="ghost" asChild className="h-8 w-full sm:w-auto font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900">
-                              <a href={ad.paymentProofUrl} target="_blank"><ExternalLink className="h-4 w-4" /> Bukti Bayar</a>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-full sm:w-auto font-medium text-xs gap-2 text-muted-foreground hover:text-slate-900"
+                              onClick={() => openProofPreview(ad.paymentProofUrl!, `Bukti Bayar - ${ad.city}`)}
+                            >
+                              <ExternalLink className="h-4 w-4" /> Bukti Bayar
                             </Button>
                           )}
                         </div>
@@ -2099,14 +2235,13 @@ export default function AdvertiserDashboard() {
                     </summary>
                     <div className="mt-3 space-y-2">
                       {batch.transferProofUrl && (
-                        <a
-                          href={batch.transferProofUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openProofPreview(batch.transferProofUrl!, `Bukti Transfer - ${batch.invoiceNumber || "Invoice"}`)}
                           className="inline-block text-xs text-blue-600 hover:underline"
                         >
                           Lihat bukti transfer
-                        </a>
+                        </button>
                       )}
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
@@ -2215,6 +2350,15 @@ export default function AdvertiserDashboard() {
                       </div>
                     </summary>
                     <div className="mt-3 space-y-2">
+                      {batch.transferProofUrl && (
+                        <button
+                          type="button"
+                          onClick={() => openProofPreview(batch.transferProofUrl!, `Bukti Transfer Bonus - ${batch.invoiceNumber || "Invoice"}`)}
+                          className="inline-block text-xs text-blue-600 hover:underline"
+                        >
+                          Lihat bukti transfer
+                        </button>
+                      )}
                       {batch.items.map((item) => (
                         <div key={item.id} className="rounded-md bg-slate-50 p-2 text-xs">
                           <p className="font-medium">
@@ -2442,6 +2586,88 @@ export default function AdvertiserDashboard() {
             </div>
           </div>
 
+          <Card className="shadow-none border-slate-100">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-slate-500" />
+                Hubungkan Admin STIFIn ke Akun Promotor
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Relasi ini dipakai untuk fitur switch profile dari akun Admin STIFIn ke dashboard promotor terkait. Maksimal 2 promotor per admin.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              <p className="text-[11px] text-slate-600">
+                Slot admin terpilih: <span className="font-semibold">{selectedAdminLinkCount}/2</span>
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <select
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={selectedLinkAdminId}
+                  onChange={(e) => setSelectedLinkAdminId(e.target.value)}
+                >
+                  <option value="">Pilih Admin STIFIn</option>
+                  {stifinAdmins.map((admin) => (
+                    <option key={admin.id} value={admin.id}>
+                      {admin.name} ({(stifinLinkCounts[admin.id] || 0)}/2)
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={selectedLinkPromotorId}
+                  onChange={(e) => setSelectedLinkPromotorId(e.target.value)}
+                >
+                  <option value="">Pilih Promotor</option>
+                  {promotorUsers.map((promotor) => (
+                    <option key={promotor.id} value={promotor.id}>
+                      {promotor.name} ({promotor.email})
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="font-semibold"
+                  onClick={handleLinkAdminPromotor}
+                  disabled={linkingAccount || !canAddSelectedAdminLink}
+                >
+                  {linkingAccount ? "Menyimpan..." : canAddSelectedAdminLink ? "Hubungkan" : "Slot Penuh"}
+                </Button>
+              </div>
+
+              <div className="rounded-md border border-slate-200 bg-slate-50 divide-y">
+                {linkedAccounts.length === 0 ? (
+                  <p className="text-xs text-slate-500 p-3">Belum ada relasi admin-promotor.</p>
+                ) : (
+                  linkedAccounts.map((link) => {
+                    const key = `${link.owner.id}:${link.profile.id}`
+                    return (
+                      <div key={key} className="p-3 flex items-center justify-between gap-3">
+                        <p className="text-xs text-slate-700">
+                          <span className="font-semibold">{link.owner.name}</span>
+                          <span className="text-slate-400"> ↔ </span>
+                          <span className="font-semibold">{link.profile.name}</span>
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-rose-600 border-rose-200 hover:bg-rose-50"
+                          onClick={() => handleUnlinkAdminPromotor(link.owner.id, link.profile.id)}
+                          disabled={unlinkingKey === key}
+                        >
+                          <Unlink2 className="h-3 w-3 mr-1" />
+                          {unlinkingKey === key ? "..." : "Lepas"}
+                        </Button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="shadow-none border-slate-100 overflow-hidden">
             <CardContent className="p-0">
               {usersLoading ? (
@@ -2593,7 +2819,7 @@ export default function AdvertiserDashboard() {
             <DialogHeader>
               <DialogTitle className="font-semibold">Tambah User</DialogTitle>
               <DialogDescription className="text-xs">
-                Pembuatan akun khusus untuk role Kreator dan Admin STIFIn.
+                Pembuatan akun untuk role Promotor, Kreator, dan Admin STIFIn.
               </DialogDescription>
             </DialogHeader>
 
@@ -2601,7 +2827,8 @@ export default function AdvertiserDashboard() {
               <div className="space-y-2">
                 <Label className="text-[11px] font-bold uppercase text-muted-foreground">Role</Label>
                 <Tabs value={createUserRole} onValueChange={(v) => setCreateUserRole(v as CreateManagedUserRole)}>
-                  <TabsList className="grid grid-cols-2">
+                  <TabsList className="grid grid-cols-3">
+                    <TabsTrigger value="PROMOTOR">Promotor</TabsTrigger>
                     <TabsTrigger value="KONTEN_KREATOR">Kreator</TabsTrigger>
                     <TabsTrigger value="STIFIN">Admin STIFIn</TabsTrigger>
                   </TabsList>
@@ -2828,6 +3055,34 @@ export default function AdvertiserDashboard() {
               <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8" disabled={isSubmitting}>Update Pesan</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={proofPreviewOpen} onOpenChange={setProofPreviewOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-semibold">{proofPreviewTitle}</DialogTitle>
+            <DialogDescription className="text-xs">Preview bukti transfer tanpa membuka tab baru.</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-slate-50 overflow-hidden">
+            {isPdfProof ? (
+              <iframe
+                title={proofPreviewTitle}
+                src={proofPreviewUrl}
+                className="w-full h-[65vh] bg-white"
+              />
+            ) : (
+              <img src={proofPreviewUrl} alt={proofPreviewTitle} className="w-full h-auto max-h-[65vh] object-contain bg-white" />
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={() => window.open(proofPreviewUrl, "_blank", "noopener,noreferrer")}>
+              Buka di tab baru
+            </Button>
+            <Button type="button" size="sm" onClick={() => setProofPreviewOpen(false)}>
+              Tutup
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

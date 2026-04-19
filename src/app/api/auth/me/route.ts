@@ -16,6 +16,11 @@ export async function GET() {
         name: user.name,
         role: user.role,
         city: user.city,
+        actorId: user.actorId || user.id,
+        actorName: user.actorName || user.name,
+        actorEmail: user.actorEmail || user.email,
+        actorRole: user.actorRole || user.role,
+        isActingAs: user.isActingAs || false,
       },
     })
   } catch (error) {

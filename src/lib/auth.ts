@@ -19,6 +19,11 @@ export interface JWTPayload {
   name: string
   role: string
   city?: string | null
+  actorId?: string
+  actorEmail?: string
+  actorName?: string
+  actorRole?: string
+  isActingAs?: boolean
 }
 
 export async function login(email: string, password: string): Promise<JWTPayload | null> {
