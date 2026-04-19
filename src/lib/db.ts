@@ -10,8 +10,11 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL
 
+  // Important for Cloudflare Workers Builds:
+  // build-time page data collection may import this module before secrets are injected.
+  // In that case, avoid throwing at import time and fall back to default PrismaClient.
   if (!connectionString) {
-    throw new Error("DATABASE_URL belum di-set")
+    return new PrismaClient()
   }
 
   const pool =
