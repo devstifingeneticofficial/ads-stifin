@@ -256,6 +256,11 @@ const statusConfig: Record<
     variant: "outline",
     className: "border-green-500 text-green-700 bg-green-50",
   },
+  IKLAN_DIJADWALKAN: {
+    label: "Iklan Dijadwalkan",
+    variant: "outline",
+    className: "border-blue-500 text-blue-700 bg-blue-50",
+  },
   IKLAN_BERJALAN: { label: "Iklan Berjalan", variant: "outline", className: "border-purple-500 text-purple-700 bg-purple-50" },
   SELESAI: { label: "Selesai", variant: "secondary", className: "border-gray-400 text-gray-600 bg-gray-100" },
   FINAL: { label: "Iklan Final", variant: "default", className: "bg-slate-900 text-white border-slate-900" },
@@ -310,8 +315,12 @@ export default function StifinDashboard() {
   const [loading, setLoading] = useState(true)
 
   // Filter states
+  const [semuaSubTab, setSemuaSubTab] = useState<
+    "ALL" | "PAYMENT" | "CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL"
+  >("ALL")
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [searchCity, setSearchCity] = useState("")
+  const [promotorReportTab, setPromotorReportTab] = useState<"BELUM_LAPOR" | "SUDAH_LAPOR">("SUDAH_LAPOR")
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSizeOption, setPageSizeOption] = useState("10")
   const [customPageSize, setCustomPageSize] = useState("10")
@@ -644,16 +653,102 @@ export default function StifinDashboard() {
 
   // ── Filtered lists ─────────────────────────────────────────────────────────
 
+  const matchesSemuaSubTab = useCallback(
+    (status: string) => {
+      switch (semuaSubTab) {
+        case "PAYMENT":
+          return ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(status)
+        case "CONTENT":
+          return ["MENUNGGU_KONTEN", "DIPROSES", "KONTEN_SELESAI"].includes(status)
+        case "SCHEDULED":
+          return status === "IKLAN_DIJADWALKAN"
+        case "ACTIVE":
+          return status === "IKLAN_BERJALAN"
+        case "DONE":
+          return status === "SELESAI"
+        case "FINAL":
+          return status === "FINAL"
+        default:
+          return true
+      }
+    },
+    [semuaSubTab]
+  )
+
+  const funnelCards = useMemo(() => {
+    const now = Date.now()
+    const categories: Array<{
+      key: "PAYMENT" | "CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL"
+      label: string
+      statuses: string[]
+      tone: string
+    }> = [
+      {
+        key: "PAYMENT",
+        label: "Pembayaran",
+        statuses: ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"],
+        tone: "bg-amber-50 border-amber-200",
+      },
+      {
+        key: "CONTENT",
+        label: "Konten",
+        statuses: ["MENUNGGU_KONTEN", "DIPROSES", "KONTEN_SELESAI"],
+        tone: "bg-orange-50 border-orange-200",
+      },
+      {
+        key: "SCHEDULED",
+        label: "Dijadwalkan",
+        statuses: ["IKLAN_DIJADWALKAN"],
+        tone: "bg-blue-50 border-blue-200",
+      },
+      {
+        key: "ACTIVE",
+        label: "Aktif",
+        statuses: ["IKLAN_BERJALAN"],
+        tone: "bg-violet-50 border-violet-200",
+      },
+      {
+        key: "DONE",
+        label: "Selesai",
+        statuses: ["SELESAI"],
+        tone: "bg-slate-50 border-slate-200",
+      },
+      {
+        key: "FINAL",
+        label: "Final",
+        statuses: ["FINAL"],
+        tone: "bg-emerald-50 border-emerald-200",
+      },
+    ]
+
+    return categories.map((category) => {
+      const items = adRequests.filter((r) => category.statuses.includes(r.status))
+      const agesInDays = items.map((item) =>
+        Math.max(0, (now - new Date(item.updatedAt).getTime()) / (1000 * 60 * 60 * 24))
+      )
+      const avgDays = agesInDays.length
+        ? agesInDays.reduce((sum, value) => sum + value, 0) / agesInDays.length
+        : 0
+
+      return {
+        ...category,
+        count: items.length,
+        avgDays,
+      }
+    })
+  }, [adRequests])
+
   const filteredAdRequests = useMemo(() => {
     return adRequests.filter((r) => {
+      const matchesSubTab = matchesSemuaSubTab(r.status)
       const matchesStatus =
         statusFilter === "ALL" || r.status === statusFilter
       const matchesCity =
         !searchCity ||
         r.city.toLowerCase().includes(searchCity.toLowerCase())
-      return matchesStatus && matchesCity
+      return matchesSubTab && matchesStatus && matchesCity
     })
-  }, [adRequests, statusFilter, searchCity])
+  }, [adRequests, matchesSemuaSubTab, statusFilter, searchCity])
 
   const effectivePageSize = useMemo(() => {
     if (pageSizeOption === "custom") {
@@ -678,7 +773,7 @@ export default function StifinDashboard() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [statusFilter, searchCity, pageSizeOption, customPageSize])
+  }, [semuaSubTab, statusFilter, searchCity, pageSizeOption, customPageSize])
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -699,6 +794,19 @@ export default function StifinDashboard() {
         note: r.promotorResult!.note,
         status: r.promotorResult!.status,
         createdAt: r.promotorResult!.createdAt,
+      }))
+  }, [adRequests])
+
+  const promotorBelumLapor = useMemo(() => {
+    return adRequests
+      .filter((r) => r.status === "SELESAI" && r.promotorResult === null)
+      .map((r) => ({
+        id: r.id,
+        promotorName: r.promotor.name,
+        promotorCity: r.promotor.city,
+        city: r.city,
+        status: r.status,
+        createdAt: r.updatedAt || r.createdAt,
       }))
   }, [adRequests])
 
@@ -896,6 +1004,90 @@ export default function StifinDashboard() {
 
         {/* ── Tab 1: Semua Pengajuan ─────────────────────────────────────────── */}
         <TabsContent value="semua" className="space-y-4 mt-4">
+          <Card className="shadow-none border-slate-100">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Funnel Operasional</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(() => {
+                const counts: Record<string, number> = funnelCards.reduce((acc, item) => {
+                  acc[item.key] = item.count
+                  return acc
+                }, {} as Record<string, number>)
+                return (
+                  <Tabs
+                    value={semuaSubTab}
+                    onValueChange={(v) =>
+                      setSemuaSubTab(
+                        v as "ALL" | "PAYMENT" | "CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL"
+                      )
+                    }
+                    className="w-full"
+                  >
+                    <TabsList className="w-full bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+                      <TabsTrigger value="ALL" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Semua
+                        {adRequests.length > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white font-bold">
+                            {adRequests.length}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="PAYMENT" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Pembayaran
+                        {(counts.PAYMENT || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold">
+                            {counts.PAYMENT}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="CONTENT" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Konten
+                        {(counts.CONTENT || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-orange-500 text-[9px] text-white font-bold">
+                            {counts.CONTENT}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="SCHEDULED" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Dijadwalkan
+                        {(counts.SCHEDULED || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-blue-500 text-[9px] text-white font-bold">
+                            {counts.SCHEDULED}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="ACTIVE" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Aktif
+                        {(counts.ACTIVE || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-violet-500 text-[9px] text-white font-bold">
+                            {counts.ACTIVE}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="DONE" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Selesai
+                        {(counts.DONE || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-500 text-[9px] text-white font-bold">
+                            {counts.DONE}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="FINAL" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                        Final
+                        {(counts.FINAL || 0) > 0 && (
+                          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-600 text-[9px] text-white font-bold">
+                            {counts.FINAL}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                )
+              })()}
+            </CardContent>
+          </Card>
+
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -921,8 +1113,10 @@ export default function StifinDashboard() {
                 </SelectItem>
                 <SelectItem value="DIPROSES">Diproses</SelectItem>
                 <SelectItem value="KONTEN_SELESAI">Konten Selesai</SelectItem>
+                <SelectItem value="IKLAN_DIJADWALKAN">Iklan Dijadwalkan</SelectItem>
                 <SelectItem value="IKLAN_BERJALAN">Iklan Berjalan</SelectItem>
                 <SelectItem value="SELESAI">Selesai</SelectItem>
+                <SelectItem value="FINAL">Final</SelectItem>
               </SelectContent>
             </Select>
             <Select value={pageSizeOption} onValueChange={setPageSizeOption}>
@@ -1148,32 +1342,73 @@ export default function StifinDashboard() {
 
         {/* ── Tab 2: Laporan Promotor ────────────────────────────────────────── */}
         <TabsContent value="promotor" className="space-y-4 mt-4">
+          <Tabs
+            value={promotorReportTab}
+            onValueChange={(v) => setPromotorReportTab(v as "BELUM_LAPOR" | "SUDAH_LAPOR")}
+            className="w-full"
+          >
+            <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+              <TabsTrigger value="BELUM_LAPOR" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Belum Lapor
+                {promotorBelumLapor.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-amber-500 text-[9px] text-white font-bold">
+                    {promotorBelumLapor.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="SUDAH_LAPOR" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Sudah Lapor
+                {promotorResults.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-600 text-[9px] text-white font-bold">
+                    {promotorResults.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           {/* Summary Card */}
           <Card className="bg-gradient-to-br from-amber-50 to-white border-amber-200">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Klien dari Semua Promotor
+                {promotorReportTab === "SUDAH_LAPOR"
+                  ? "Total Klien dari Semua Promotor"
+                  : "Promotor Belum Input Laporan Klien"}
               </CardTitle>
               <Users className="h-4 w-4 text-amber-600" />
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-amber-700">
-                {promotorSummaryTotalClients.toLocaleString("id-ID")}
+                {promotorReportTab === "SUDAH_LAPOR"
+                  ? promotorSummaryTotalClients.toLocaleString("id-ID")
+                  : promotorBelumLapor.length.toLocaleString("id-ID")}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Dari {promotorResults.length} laporan promotor
+                {promotorReportTab === "SUDAH_LAPOR"
+                  ? `Dari ${promotorResults.length} laporan promotor`
+                  : "Menunggu promotor menginput jumlah klien"}
               </p>
             </CardContent>
           </Card>
 
           {/* List */}
-          {promotorResults.length === 0 ? (
+          {promotorReportTab === "SUDAH_LAPOR" && promotorResults.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <FileText className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">Belum ada laporan</h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   Laporan promotor akan tampil setelah promotor menginput hasil
+                </p>
+              </CardContent>
+            </Card>
+          ) : promotorReportTab === "BELUM_LAPOR" && promotorBelumLapor.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">Semua sudah lapor</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Tidak ada promotor yang menunggu input jumlah klien.
                 </p>
               </CardContent>
             </Card>
@@ -1192,22 +1427,32 @@ export default function StifinDashboard() {
                           <th className="text-left p-4 font-medium text-muted-foreground">
                             Kota
                           </th>
-                          <th className="text-left p-4 font-medium text-muted-foreground">
-                            Total Klien
-                          </th>
-                          <th className="text-left p-4 font-medium text-muted-foreground">
-                            Catatan
-                          </th>
+                          {promotorReportTab === "SUDAH_LAPOR" ? (
+                            <>
+                              <th className="text-left p-4 font-medium text-muted-foreground">
+                                Total Klien
+                              </th>
+                              <th className="text-left p-4 font-medium text-muted-foreground">
+                                Catatan
+                              </th>
+                            </>
+                          ) : (
+                            <th className="text-left p-4 font-medium text-muted-foreground">
+                              Status Laporan
+                            </th>
+                          )}
                           <th className="text-left p-4 font-medium text-muted-foreground">
                             Tanggal
                           </th>
-                          <th className="text-left p-4 font-medium text-muted-foreground">
-                            Validasi
-                          </th>
+                          {promotorReportTab === "SUDAH_LAPOR" && (
+                            <th className="text-left p-4 font-medium text-muted-foreground">
+                              Validasi
+                            </th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
-                        {promotorResults.map((r) => (
+                        {(promotorReportTab === "SUDAH_LAPOR" ? promotorResults : promotorBelumLapor).map((r: any) => (
                           <tr
                             key={r.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -1224,45 +1469,57 @@ export default function StifinDashboard() {
                                 {r.city}
                               </div>
                             </td>
-                            <td className="p-4">
-                              <div className="flex flex-col gap-1">
-                                <Badge
-                                  variant="secondary"
-                                  className="bg-amber-100 text-amber-800 border-amber-300 w-fit"
-                                >
-                                  {r.totalClients} klien
+                            {promotorReportTab === "SUDAH_LAPOR" ? (
+                              <>
+                                <td className="p-4">
+                                  <div className="flex flex-col gap-1">
+                                    <Badge
+                                      variant="secondary"
+                                      className="bg-amber-100 text-amber-800 border-amber-300 w-fit"
+                                    >
+                                      {r.totalClients} klien
+                                    </Badge>
+                                    {r.previousTotalClients !== null && r.previousTotalClients !== r.totalClients && (
+                                      <span className="text-[10px] text-muted-foreground line-through italic">
+                                        Sebelumnya: {r.previousTotalClients}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="p-4 max-w-[200px] truncate">
+                                  {r.note || (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </td>
+                              </>
+                            ) : (
+                              <td className="p-4">
+                                <Badge variant="outline" className="border-amber-500 text-amber-700 bg-amber-50">
+                                  Belum Lapor
                                 </Badge>
-                                {r.previousTotalClients !== null && r.previousTotalClients !== r.totalClients && (
-                                  <span className="text-[10px] text-muted-foreground line-through italic">
-                                    Sebelumnya: {r.previousTotalClients}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="p-4 max-w-[200px] truncate">
-                              {r.note || (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </td>
+                              </td>
+                            )}
                             <td className="p-4 text-muted-foreground">
                               {formatShortDate(r.createdAt)}
                             </td>
-                            <td className="p-4">
-                              {r.status === "VALID" ? (
-                                <Badge className="bg-green-100 text-green-800 border-green-300">
-                                  Sudah Valid
-                                </Badge>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleValidate(r.id)}
-                                  disabled={validatingId === r.id}
-                                  className="h-8 px-3 bg-blue-600 hover:bg-blue-700"
-                                >
-                                  Valid
-                                </Button>
-                              )}
-                            </td>
+                            {promotorReportTab === "SUDAH_LAPOR" && (
+                              <td className="p-4">
+                                {r.status === "VALID" ? (
+                                  <Badge className="bg-green-100 text-green-800 border-green-300">
+                                    Sudah Valid
+                                  </Badge>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleValidate(r.id)}
+                                    disabled={validatingId === r.id}
+                                    className="h-8 px-3 bg-blue-600 hover:bg-blue-700"
+                                  >
+                                    Valid
+                                  </Button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1273,7 +1530,7 @@ export default function StifinDashboard() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {promotorResults.map((r) => (
+                {(promotorReportTab === "SUDAH_LAPOR" ? promotorResults : promotorBelumLapor).map((r: any) => (
                   <Card key={r.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between gap-2">
@@ -1283,12 +1540,18 @@ export default function StifinDashboard() {
                             {r.promotorName}
                           </span>
                         </div>
-                        <Badge
-                          variant="secondary"
-                          className="bg-amber-100 text-amber-800 border-amber-300 shrink-0"
-                        >
-                          {r.totalClients} klien
-                        </Badge>
+                        {promotorReportTab === "SUDAH_LAPOR" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-amber-100 text-amber-800 border-amber-300 shrink-0"
+                          >
+                            {r.totalClients} klien
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-amber-500 text-amber-700 bg-amber-50 shrink-0">
+                            Belum Lapor
+                          </Badge>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -1309,7 +1572,7 @@ export default function StifinDashboard() {
                           </p>
                         </div>
                       </div>
-                      {r.note && (
+                      {promotorReportTab === "SUDAH_LAPOR" && r.note && (
                         <div className="rounded-md bg-muted/50 p-3 text-sm">
                           <p className="text-muted-foreground text-xs mb-1">
                             Catatan
