@@ -17,6 +17,7 @@ import {
   Wallet,
   ReceiptText,
   ChevronDown,
+  Trophy,
 } from "lucide-react"
 
 import {
@@ -867,12 +868,12 @@ export default function StifinDashboard() {
       {/* ── Main Tabs ─────────────────────────────────────────────────────── */}
       <Tabs defaultValue="semua" className="w-full">
         <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
-          <TabsTrigger value="semua" className="text-xs font-semibold">Semua Pengajuan</TabsTrigger>
-          <TabsTrigger value="promotor" className="text-xs font-semibold">Laporan Promotor</TabsTrigger>
-          <TabsTrigger value="advertiser" className="text-xs font-semibold">Laporan Advertiser</TabsTrigger>
-          <TabsTrigger value="top_promotor" className="text-xs font-semibold">Top Promotor</TabsTrigger>
-          <TabsTrigger value="gaji_kreator" className="text-xs font-semibold">Gaji Kreator</TabsTrigger>
-          <TabsTrigger value="bonus_advertiser" className="text-xs font-semibold">Bonus Advertiser</TabsTrigger>
+          <TabsTrigger value="semua" className="text-xs font-semibold gap-2"><BarChart3 className="h-4 w-4" /> Semua Pengajuan</TabsTrigger>
+          <TabsTrigger value="promotor" className="text-xs font-semibold gap-2"><FileText className="h-4 w-4" /> Laporan Promotor</TabsTrigger>
+          <TabsTrigger value="advertiser" className="text-xs font-semibold gap-2"><ReceiptText className="h-4 w-4" /> Laporan Advertiser</TabsTrigger>
+          <TabsTrigger value="top_promotor" className="text-xs font-semibold gap-2"><Trophy className="h-4 w-4" /> Top Promotor</TabsTrigger>
+          <TabsTrigger value="gaji_kreator" className="text-xs font-semibold gap-2"><Wallet className="h-4 w-4" /> Gaji Kreator</TabsTrigger>
+          <TabsTrigger value="bonus_advertiser" className="text-xs font-semibold gap-2"><DollarSign className="h-4 w-4" /> Bonus Advertiser</TabsTrigger>
         </TabsList>
 
         {/* ── Tab 1: Semua Pengajuan ─────────────────────────────────────────── */}
