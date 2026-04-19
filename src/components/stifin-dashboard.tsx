@@ -75,6 +75,8 @@ interface AdRequest {
   id: string
   city: string
   startDate: string
+  adStartDate?: string | null
+  adEndDate?: string | null
   durationDays: number
   dailyBudget: number
   totalBudget: number
@@ -321,6 +323,7 @@ export default function StifinDashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL")
   const [searchCity, setSearchCity] = useState("")
   const [promotorReportTab, setPromotorReportTab] = useState<"BELUM_LAPOR" | "SUDAH_LAPOR">("SUDAH_LAPOR")
+  const [advertiserReportTab, setAdvertiserReportTab] = useState<"SEMUA" | "BERJALAN" | "SELESAI">("BERJALAN")
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSizeOption, setPageSizeOption] = useState("10")
   const [customPageSize, setCustomPageSize] = useState("10")
@@ -818,12 +821,41 @@ export default function StifinDashboard() {
         promotorName: r.promotor.name,
         promotorCity: r.promotor.city,
         city: r.city,
+        status: r.status,
+        adEndDate: r.adEndDate ?? null,
         cpr: r.adReport!.cpr,
         totalLeads: r.adReport!.totalLeads,
         amountSpent: r.adReport!.amountSpent,
         createdAt: r.adReport!.createdAt,
       }))
   }, [adRequests])
+
+  const advertiserReportGroups = useMemo(() => {
+    const nowTs = Date.now()
+    const isEndedByDate = (endDate: string | null) => {
+      if (!endDate) return false
+      const ts = new Date(endDate).getTime()
+      return Number.isFinite(ts) && ts <= nowTs
+    }
+
+    const berjalan = adReports.filter((r) => {
+      if (isEndedByDate(r.adEndDate)) return false
+      return r.status === "IKLAN_DIJADWALKAN" || r.status === "IKLAN_BERJALAN"
+    })
+
+    const selesai = adReports.filter((r) => {
+      if (isEndedByDate(r.adEndDate)) return true
+      return r.status === "SELESAI" || r.status === "FINAL"
+    })
+
+    return { semua: adReports, berjalan, selesai }
+  }, [adReports])
+
+  const activeAdReports = advertiserReportTab === "SEMUA"
+    ? advertiserReportGroups.semua
+    : advertiserReportTab === "BERJALAN"
+      ? advertiserReportGroups.berjalan
+      : advertiserReportGroups.selesai
 
   // ── Summary: Promotor results ──────────────────────────────────────────────
 
@@ -834,18 +866,18 @@ export default function StifinDashboard() {
 
   // ── Summary: Ad reports ────────────────────────────────────────────────────
 
-  const validCprs = adReports.filter((r) => r.cpr !== null && r.cpr > 0)
+  const validCprs = activeAdReports.filter((r) => r.cpr !== null && r.cpr > 0)
   const averageCpr =
     validCprs.length > 0
       ? validCprs.reduce((sum, r) => sum + r.cpr!, 0) / validCprs.length
       : 0
 
-  const reportTotalLeads = adReports.reduce(
+  const reportTotalLeads = activeAdReports.reduce(
     (sum, r) => sum + (r.totalLeads ?? 0),
     0
   )
 
-  const reportTotalAmountSpent = adReports.reduce(
+  const reportTotalAmountSpent = activeAdReports.reduce(
     (sum, r) => sum + (r.amountSpent ?? 0),
     0
   )
@@ -1591,56 +1623,88 @@ export default function StifinDashboard() {
 
         {/* ── Tab 3: Laporan Advertiser ─────────────────────────────────────── */}
         <TabsContent value="advertiser" className="space-y-4 mt-4">
+          <Tabs
+            value={advertiserReportTab}
+            onValueChange={(v) => setAdvertiserReportTab(v as "SEMUA" | "BERJALAN" | "SELESAI")}
+            className="w-full"
+          >
+            <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
+              <TabsTrigger value="SEMUA" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Semua
+                {advertiserReportGroups.semua.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-slate-900 text-[9px] text-white font-bold">
+                    {advertiserReportGroups.semua.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="BERJALAN" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Berjalan
+                {advertiserReportGroups.berjalan.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-blue-600 text-[9px] text-white font-bold">
+                    {advertiserReportGroups.berjalan.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="SELESAI" className="relative text-xs h-8 px-3 font-semibold rounded-md data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                Selesai
+                {advertiserReportGroups.selesai.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-emerald-600 text-[9px] text-white font-bold">
+                    {advertiserReportGroups.selesai.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
             <Card className="bg-gradient-to-br from-emerald-50 to-white border-emerald-200">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 sm:px-4 pt-2 sm:pt-3 pb-0 sm:pb-1">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Rata-rata CPR
                 </CardTitle>
-                <Target className="h-4 w-4 text-emerald-600" />
+                <Target className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-emerald-700">
+              <CardContent className="px-3 sm:px-4 pb-2 sm:pb-3 pt-0">
+                <div className="text-lg sm:text-xl leading-tight font-bold text-emerald-700">
                   {validCprs.length > 0
                     ? formatRupiah(Math.round(averageCpr))
                     : "-"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="hidden sm:block text-xs text-muted-foreground mt-1">
                   Cost Per Result rata-rata
                 </p>
               </CardContent>
             </Card>
 
             <Card className="bg-gradient-to-br from-violet-50 to-white border-violet-200">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 sm:px-4 pt-2 sm:pt-3 pb-0 sm:pb-1">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Total Leads
                 </CardTitle>
-                <TrendingUp className="h-4 w-4 text-violet-600" />
+                <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-violet-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-violet-700">
+              <CardContent className="px-3 sm:px-4 pb-2 sm:pb-3 pt-0">
+                <div className="text-lg sm:text-xl leading-tight font-bold text-violet-700">
                   {reportTotalLeads.toLocaleString("id-ID")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="hidden sm:block text-xs text-muted-foreground mt-1">
                   Leads dari semua iklan
                 </p>
               </CardContent>
             </Card>
 
             <Card className="bg-gradient-to-br from-orange-50 to-white border-orange-200">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 sm:px-4 pt-2 sm:pt-3 pb-0 sm:pb-1">
+                <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">
                   Total Amount Spent
                 </CardTitle>
-                <DollarSign className="h-4 w-4 text-orange-600" />
+                <DollarSign className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-orange-600" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-orange-700">
+              <CardContent className="px-3 sm:px-4 pb-2 sm:pb-3 pt-0">
+                <div className="text-lg sm:text-xl leading-tight font-bold text-orange-700">
                   {formatRupiah(reportTotalAmountSpent)}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="hidden sm:block text-xs text-muted-foreground mt-1">
                   Total biaya iklan yang terpakai
                 </p>
               </CardContent>
@@ -1648,13 +1712,23 @@ export default function StifinDashboard() {
           </div>
 
           {/* List */}
-          {adReports.length === 0 ? (
+          {activeAdReports.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <BarChart3 className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">Belum ada laporan iklan</h3>
+                <h3 className="text-lg font-medium">
+                  {advertiserReportTab === "SEMUA"
+                    ? "Belum ada laporan iklan"
+                    : advertiserReportTab === "BERJALAN"
+                      ? "Belum ada laporan iklan berjalan"
+                      : "Belum ada laporan iklan selesai"}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Laporan iklan akan tampil setelah advertiser menginput laporan
+                  {advertiserReportTab === "SEMUA"
+                    ? "Laporan iklan akan tampil setelah data sinkron Meta tersedia."
+                    : advertiserReportTab === "BERJALAN"
+                      ? "Data akan muncul saat iklan sudah dijadwalkan/aktif dan sinkron Meta tersedia."
+                      : "Data akan muncul setelah iklan berakhir dan sinkron Meta tersedia."}
                 </p>
               </CardContent>
             </Card>
@@ -1688,7 +1762,7 @@ export default function StifinDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {adReports.map((r) => (
+                        {activeAdReports.map((r) => (
                           <tr
                             key={r.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -1733,7 +1807,7 @@ export default function StifinDashboard() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {adReports.map((r) => (
+                {activeAdReports.map((r) => (
                   <Card key={r.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center gap-2">
