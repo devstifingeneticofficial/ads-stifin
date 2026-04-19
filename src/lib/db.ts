@@ -9,19 +9,20 @@ const globalForPrisma = globalThis as unknown as {
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL
+  const effectiveConnectionString =
+    connectionString || "postgresql://build:build@127.0.0.1:5432/build_db?connect_timeout=1"
 
   // Important for Cloudflare Workers Builds:
   // build-time page data collection may import this module before secrets are injected.
-  // In that case, avoid throwing at import time and fall back to default PrismaClient.
-  if (!connectionString) {
-    return new PrismaClient()
-  }
+  // For engineType="client", Prisma still requires an adapter at init time.
+  // So when DATABASE_URL is missing during build, we initialize a dummy adapter
+  // and avoid failing at import time.
 
   const pool =
     globalForPrisma.pgPool ??
     new Pool({
-      connectionString,
-      ssl: connectionString.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
+      connectionString: effectiveConnectionString,
+      ssl: effectiveConnectionString.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
       max: 5,
     })
 
