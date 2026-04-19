@@ -3,11 +3,22 @@ import bcrypt from "bcryptjs"
 import { cookies } from "next/headers"
 
 const DEV_FALLBACK_SECRET = "stifin-dev-secret-key-only-for-local"
-const JWT_SECRET = process.env.NEXTAUTH_SECRET || DEV_FALLBACK_SECRET
 const SESSION_MAX_AGE_DAYS = Number(process.env.AUTH_SESSION_DAYS || "180")
+let hasWarnedMissingSecret = false
 
-if (process.env.NODE_ENV === "production" && !process.env.NEXTAUTH_SECRET) {
-  throw new Error("NEXTAUTH_SECRET wajib di-set pada production")
+function getJwtSecret() {
+  const configuredSecret = process.env.NEXTAUTH_SECRET
+  if (configuredSecret) return configuredSecret
+
+  if (process.env.NODE_ENV === "production" && !hasWarnedMissingSecret) {
+    hasWarnedMissingSecret = true
+    console.error(
+      "[AUTH] NEXTAUTH_SECRET tidak terdeteksi. Menggunakan fallback secret sementara. " +
+        "Segera set NEXTAUTH_SECRET di environment Cloudflare agar sesi aman.",
+    )
+  }
+
+  return DEV_FALLBACK_SECRET
 }
 
 export const AUTH_COOKIE_NAME = "auth-token"
@@ -53,12 +64,12 @@ export async function login(email: string, password: string): Promise<JWTPayload
 }
 
 export function createToken(payload: JWTPayload): string {
-  return jwt.sign({ ...payload }, JWT_SECRET, { expiresIn: `${SESSION_MAX_AGE_DAYS}d` })
+  return jwt.sign({ ...payload }, getJwtSecret(), { expiresIn: `${SESSION_MAX_AGE_DAYS}d` })
 }
 
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as unknown as JWTPayload
+    return jwt.verify(token, getJwtSecret()) as unknown as JWTPayload
   } catch {
     return null
   }
