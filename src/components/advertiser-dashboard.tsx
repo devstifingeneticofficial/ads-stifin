@@ -1342,7 +1342,11 @@ export default function AdvertiserDashboard() {
       })
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.message || data.error || "Gagal generate ulang draft Meta")
-      toast.success(data.message || "Draft Meta berhasil digenerate ulang")
+      if (data.partial) {
+        toast.warning(data.message || "Draft Campaign berhasil dibuat, namun Ad Set/Ads belum tuntas otomatis.")
+      } else {
+        toast.success(data.message || "Draft Meta berhasil digenerate ulang")
+      }
       fetchAdRequests()
     } catch (error: any) {
       toast.error(error?.message || "Gagal generate ulang draft Meta")

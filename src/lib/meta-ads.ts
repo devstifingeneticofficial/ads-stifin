@@ -36,6 +36,7 @@ interface MetaEnvConfig {
   apiVersion: string
   adAccountId: string
   pageId: string
+  instagramActorId?: string
   adDestination: "WEBSITE" | "WHATSAPP"
   whatsappNumber?: string
   bidAmount: number
@@ -44,6 +45,8 @@ interface MetaEnvConfig {
   autoCreateAdsetWithoutWa: boolean
   placeholderImageUrl: string
   templateCampaignId: string
+  chatTemplateName: string
+  defaultVideoId: string
 }
 
 interface MetaAdDraftContext {
@@ -66,6 +69,10 @@ interface MetaDraftResult {
   adIds: string[]
   partial?: boolean
   warning?: string
+}
+
+interface MetaPreflightResult {
+  warnings: string[]
 }
 
 interface MetaCampaignInsightRow {
@@ -174,7 +181,7 @@ function getJakartaDateTokens(date: Date) {
 }
 
 function formatDateForName(date: Date): string {
-  return formatCampaignDateID(date).replace(/\./g, "")
+  return formatCampaignDateID(date)
 }
 
 function toJakartaDateAt(base: Date, hour: number, minute: number): Date {
@@ -267,18 +274,72 @@ function isAttributionWindowError(message: string): boolean {
   return value.includes("attribution window is invalid") || value.includes("subcode=1885423")
 }
 
-function isBidAmountRequiredError(message: string): boolean {
+function isCapabilityError(message: string): boolean {
   const value = message.toLowerCase()
-  return value.includes("bid amount required") || value.includes("subcode=1815857")
+  return value.includes("does not have the capability") || /\bcode=3\b/.test(value)
 }
 
-function isBidAmountNotAllowedError(message: string): boolean {
+function isInvalidInstagramActorError(message: string): boolean {
   const value = message.toLowerCase()
   return (
-    value.includes("bid amount can't be set") ||
-    value.includes("can't set a bid cap") ||
-    value.includes("subcode=1815858")
+    value.includes("instagram_actor_id") &&
+    (value.includes("must be a valid instagram account id") || value.includes("invalid"))
   )
+}
+
+function isImageDownloadError(message: string): boolean {
+  const value = message.toLowerCase()
+  return (
+    value.includes("image wasn't downloaded") ||
+    value.includes("couldn't be downloaded") ||
+    value.includes("subcode=3858258")
+  )
+}
+
+function isInvalidVideoIdError(message: string): boolean {
+  const value = message.toLowerCase()
+  return value.includes("video_id") && value.includes("not a valid")
+}
+
+function withStep(step: string, error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error || "Unknown error")
+  return new Error(`[${step}] ${message}`)
+}
+
+function runMetaPreflight(ad: {
+  status: string
+  contentUrl: string | null
+  promotor: { phone: string | null; name: string }
+}, config: MetaEnvConfig): MetaPreflightResult {
+  const warnings: string[] = []
+
+  if (ad.status !== "KONTEN_SELESAI" && ad.status !== "IKLAN_DIJADWALKAN" && ad.status !== "IKLAN_BERJALAN") {
+    warnings.push(`Status saat ini ${ad.status}. Umumnya Generate Draft dijalankan saat KONTEN_SELESAI.`)
+  }
+
+  if (!ad.contentUrl || ad.contentUrl === "WA_CHANNEL") {
+    warnings.push("Konten video final belum terdeteksi di sistem (placeholder). Draft tetap dibuat dengan media placeholder.")
+  }
+
+  if (config.adDestination === "WHATSAPP") {
+    const normalized = normalizeWhatsAppNumber(ad.promotor.phone)
+    const fallback = normalizeWhatsAppNumber(config.whatsappNumber)
+    if (!normalized && !fallback) {
+      warnings.push("Nomor WA promotor/fallback belum tersedia. CTWA mungkin gagal.")
+    }
+  }
+
+  if (!config.chatTemplateName) {
+    warnings.push("Nama chat template belum diset. Gunakan META_CHAT_TEMPLATE_NAME=DefaultStifin.")
+  }
+
+  if (!ad.contentUrl || ad.contentUrl === "WA_CHANNEL") {
+    if (!config.defaultVideoId) {
+      warnings.push("Video fallback belum diset. Gunakan META_DEFAULT_VIDEO_ID agar draft ad tetap bisa dibuat saat konten final belum ada.")
+    }
+  }
+
+  return { warnings }
 }
 
 function getMetaConfig(requireDraftFields = true): MetaEnvConfig {
@@ -286,6 +347,7 @@ function getMetaConfig(requireDraftFields = true): MetaEnvConfig {
   const apiVersion = process.env.META_API_VERSION?.trim() || "v23.0"
   const adAccountId = process.env.META_AD_ACCOUNT_ID?.trim() || ""
   const pageId = process.env.META_PAGE_ID?.trim() || ""
+  const instagramActorId = process.env.META_INSTAGRAM_ACTOR_ID?.trim() || ""
   const adDestinationRaw = process.env.META_AD_DESTINATION?.trim().toUpperCase() || "WEBSITE"
   const adDestination: "WEBSITE" | "WHATSAPP" =
     adDestinationRaw === "WHATSAPP" ? "WHATSAPP" : "WEBSITE"
@@ -299,8 +361,10 @@ function getMetaConfig(requireDraftFields = true): MetaEnvConfig {
     (process.env.AUTO_CREATE_ADSET_WITHOUT_WA?.trim().toLowerCase() || "") === "true" ||
     process.env.AUTO_CREATE_ADSET_WITHOUT_WA?.trim() === "1"
   const placeholderImageUrl =
-    process.env.META_PLACEHOLDER_IMAGE_URL?.trim() || "https://placehold.co/1080x1080/png?text=STIFIn+Ads"
+    process.env.META_PLACEHOLDER_IMAGE_URL?.trim() || "https://raw.githubusercontent.com/devstifingeneticofficial/ads-stifin/main/public/logo-stifin.jpg"
   const templateCampaignId = process.env.META_TEMPLATE_CAMPAIGN_ID?.trim() || ""
+  const chatTemplateName = process.env.META_CHAT_TEMPLATE_NAME?.trim() || "DefaultStifin"
+  const defaultVideoId = process.env.META_DEFAULT_VIDEO_ID?.trim() || ""
 
   const missing: string[] = []
   if (!accessToken) missing.push("META_ACCESS_TOKEN")
@@ -325,6 +389,7 @@ function getMetaConfig(requireDraftFields = true): MetaEnvConfig {
     apiVersion,
     adAccountId,
     pageId,
+    instagramActorId,
     adDestination,
     whatsappNumber,
     bidAmount,
@@ -333,6 +398,8 @@ function getMetaConfig(requireDraftFields = true): MetaEnvConfig {
     autoCreateAdsetWithoutWa,
     placeholderImageUrl,
     templateCampaignId,
+    chatTemplateName,
+    defaultVideoId,
   }
 }
 
@@ -425,48 +492,54 @@ async function createAdSet(
   endAt: Date,
   resolvedWhatsappNumber: string
 ): Promise<string> {
-  const adSetName = `Ad Set - ${ctx.city} ${formatDateForName(ctx.startDate)}`
-  const useMessageFallback =
-    config.adDestination === "WHATSAPP" && config.autoCreateAdsetWithoutWa
+  const adSetName = `Adset ${ctx.city} ${formatDateForName(ctx.startDate)}`
+  const useMessageFallback = config.adDestination === "WHATSAPP" && config.autoCreateAdsetWithoutWa
+  const destinationType = useMessageFallback ? "MESSENGER" : config.adDestination
 
-  const promotedObject =
-    useMessageFallback
-      ? {
-          page_id: config.pageId,
-        }
-      : config.adDestination === "WHATSAPP"
-      ? {
-          page_id: config.pageId,
-          whatsapp_phone_number: resolvedWhatsappNumber,
-        }
-      : {
-          pixel_id: config.pixelId,
-          custom_event_type: "PURCHASE",
-        }
   const basePayload: Record<string, unknown> = {
     name: adSetName,
     campaign_id: campaignId,
     status: "PAUSED",
     billing_event: "IMPRESSIONS",
     optimization_goal: "CONVERSATIONS",
-    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-    destination_type: useMessageFallback ? "MESSENGER" : config.adDestination,
+    destination_type: destinationType,
     start_time: Math.floor(startAt.getTime() / 1000),
     end_time: Math.floor(endAt.getTime() / 1000),
     targeting: {
-      geo_locations: { countries: ["ID"] },
+      geo_locations: {
+        countries: ["ID"],
+      },
       publisher_platforms: ["facebook", "instagram"],
     },
+    promoted_object:
+      destinationType === "WHATSAPP"
+        ? {
+            page_id: config.pageId,
+            whatsapp_phone_number: resolvedWhatsappNumber,
+          }
+        : destinationType === "MESSENGER"
+          ? {
+              page_id: config.pageId,
+            }
+          : {
+              pixel_id: config.pixelId,
+              custom_event_type: "PURCHASE",
+            },
   }
-  basePayload.promoted_object = promotedObject
 
+  // Keep retries minimal and CTWA-oriented to reduce "invalid combination" failures.
   const variants: Record<string, unknown>[] = [
-    { ...basePayload, attribution_setting: "1d_click" },
-    { ...basePayload, attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 1 }] },
-    { ...basePayload, conversion_attribution_window_days: 1 },
-    { ...basePayload, bid_strategy: "LOWEST_COST_WITH_BID_CAP", bid_amount: String(config.bidAmount), attribution_setting: "1d_click" },
-    { ...basePayload, bid_strategy: "LOWEST_COST_WITH_BID_CAP", bid_amount: String(config.bidAmount), attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 1 }] },
-    { ...basePayload },
+    {
+      ...basePayload,
+      attribution_setting: "1d_click",
+    },
+    {
+      ...basePayload,
+      attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 1 }],
+    },
+    {
+      ...basePayload,
+    },
   ]
 
   let lastError: any = null
@@ -482,11 +555,7 @@ async function createAdSet(
     } catch (error: any) {
       lastError = error
       const msg = error?.message || ""
-      if (
-        !isAttributionWindowError(msg) &&
-        !isBidAmountRequiredError(msg) &&
-        !isBidAmountNotAllowedError(msg)
-      ) {
+      if (!isAttributionWindowError(msg)) {
         throw error
       }
     }
@@ -501,18 +570,19 @@ async function createCreative(
   adNumber: number,
   template: MetaAdsTemplate,
   resolvedWhatsappNumber: string,
-  imageHash: string
+  imageHash?: string | null
 ): Promise<string> {
   const useMessageFallback =
     config.adDestination === "WHATSAPP" && config.autoCreateAdsetWithoutWa
-  const name = `${ctx.city} - Ad ${adNumber}`
-  const bodyOptions = template.primaryTexts.map((text) => ({
-    text: replaceTemplateVariables(text, ctx),
-  }))
-  const titleOptions = template.headlines.map((text) => ({
-    text: replaceTemplateVariables(text, ctx),
-  }))
-
+  const name = `${ctx.city} - ${adNumber}`
+  const primaryText = replaceTemplateVariables(
+    template.primaryTexts[(adNumber - 1) % Math.max(template.primaryTexts.length, 1)] || DEFAULT_PRIMARY_TEXTS[0],
+    ctx
+  )
+  const headline = replaceTemplateVariables(
+    template.headlines[(adNumber - 1) % Math.max(template.headlines.length, 1)] || DEFAULT_HEADLINES[0],
+    ctx
+  )
   const description = replaceTemplateVariables(template.description, ctx)
 
   const linkUrl =
@@ -522,34 +592,126 @@ async function createCreative(
         ? `https://m.me/${config.pageId}`
         : config.destinationUrl
 
-  const creative = await graphRequest<{ id: string }>(
-    config,
-    `${config.adAccountId}/adcreatives`,
-    "POST",
-    {
-      name,
-      object_story_spec: {
-        page_id: config.pageId,
-      },
-      asset_feed_spec: {
-        ad_formats: ["SINGLE_IMAGE"],
-        images: [{ hash: imageHash }],
-        bodies: bodyOptions,
-        titles: titleOptions,
-        descriptions: [{ text: description }],
-        link_urls: [{ website_url: linkUrl }],
-        call_to_action_types: [
-          config.adDestination === "WHATSAPP" && !useMessageFallback
-            ? "WHATSAPP_MESSAGE"
-            : useMessageFallback
-              ? "MESSAGE_PAGE"
-              : "LEARN_MORE",
-        ],
-      },
-    }
-  )
+  const callToAction =
+    config.adDestination === "WHATSAPP" && !useMessageFallback
+      ? {
+          type: "WHATSAPP_MESSAGE",
+          value: {
+            app_destination: "WHATSAPP",
+            link: linkUrl,
+          },
+        }
+      : useMessageFallback
+        ? {
+            type: "MESSAGE_PAGE",
+            value: {
+              link: linkUrl,
+            },
+          }
+        : {
+            type: "LEARN_MORE",
+            value: {
+              link: linkUrl,
+            },
+          }
 
-  return creative.id
+  const pictureCandidates = [
+    config.placeholderImageUrl,
+    "https://raw.githubusercontent.com/devstifingeneticofficial/ads-stifin/main/public/logo-stifin.jpg",
+    "https://dummyimage.com/1080x1080/0f172a/ffffff.png&text=STIFIn",
+  ].filter(Boolean)
+  const hasDefaultVideo = !!config.defaultVideoId
+
+  const buildPayload = (includeInstagramActor: boolean, pictureUrl?: string, useVideo = hasDefaultVideo) => ({
+    name,
+    object_story_spec: {
+      page_id: config.pageId,
+      ...(includeInstagramActor && config.instagramActorId
+        ? { instagram_actor_id: config.instagramActorId }
+        : {}),
+      ...(useVideo
+        ? {
+            video_data: {
+              video_id: config.defaultVideoId,
+              message: primaryText,
+              title: headline,
+              call_to_action: callToAction,
+            },
+          }
+        : {
+            link_data: {
+              ...(imageHash ? { image_hash: imageHash } : { picture: pictureUrl || pictureCandidates[0] }),
+              link: linkUrl,
+              message: primaryText,
+              name: headline,
+              description,
+              call_to_action: callToAction,
+            },
+          }),
+    },
+    degrees_of_freedom_spec: {
+      creative_features_spec: {
+        standard_enhancements: {
+          enroll_status: "OPT_IN",
+        },
+      },
+    },
+  })
+
+  const createWithPayload = async (pictureUrl?: string, useVideo = hasDefaultVideo): Promise<{ id: string }> => {
+    try {
+      return await graphRequest<{ id: string }>(
+        config,
+        `${config.adAccountId}/adcreatives`,
+        "POST",
+        buildPayload(true, pictureUrl, useVideo)
+      )
+    } catch (error: any) {
+      const message = error?.message || ""
+      if (isInvalidInstagramActorError(message) && config.instagramActorId) {
+        return await graphRequest<{ id: string }>(
+          config,
+          `${config.adAccountId}/adcreatives`,
+          "POST",
+          buildPayload(false, pictureUrl, useVideo)
+        )
+      }
+      throw error
+    }
+  }
+
+  if (hasDefaultVideo) {
+    try {
+      const creative = await createWithPayload(undefined, true)
+      return creative.id
+    } catch (error: any) {
+      const message = error?.message || ""
+      if (!isInvalidVideoIdError(message)) {
+        throw error
+      }
+      // Fallback: if video ID is invalid, continue with image creative.
+    }
+  }
+
+  if (imageHash) {
+    const creative = await createWithPayload(undefined, false)
+    return creative.id
+  }
+
+  let lastError: any = null
+  for (const candidate of pictureCandidates) {
+    try {
+      const creative = await createWithPayload(candidate, false)
+      return creative.id
+    } catch (error: any) {
+      lastError = error
+      if (!isImageDownloadError(error?.message || "")) {
+        throw error
+      }
+    }
+  }
+
+  throw lastError || new Error("Gagal membuat creative Meta Ads.")
 }
 
 async function ensurePlaceholderImageHash(config: MetaEnvConfig): Promise<string> {
@@ -588,7 +750,7 @@ async function createAd(
   adNumber: number,
   creativeId: string
 ): Promise<string> {
-  const name = `${ctx.city} - Ad ${adNumber}`
+  const name = `${ctx.city} - ${adNumber}`
 
   const ad = await graphRequest<{ id: string }>(
     config,
@@ -628,7 +790,13 @@ async function createMetaDraft(ctx: MetaAdDraftContext, template: MetaAdsTemplat
 
   const campaignId = await createCampaign(config, ctx)
   try {
-    const imageHash = await ensurePlaceholderImageHash(config)
+    let imageHash: string | null = null
+    try {
+      imageHash = await ensurePlaceholderImageHash(config)
+    } catch {
+      // Fallback: continue without adimages capability by using picture URL on creative.
+      imageHash = null
+    }
     let adSetId = ""
     try {
       adSetId = await createAdSet(config, ctx, campaignId, startAt, endAt, resolvedWhatsappNumber)
@@ -637,17 +805,31 @@ async function createMetaDraft(ctx: MetaAdDraftContext, template: MetaAdsTemplat
         config.adDestination === "WHATSAPP" &&
         !!fallbackWhatsappNumber &&
         fallbackWhatsappNumber !== resolvedWhatsappNumber
-      if (!canRetryWithFallback) throw error
+      if (!canRetryWithFallback) throw withStep("createAdSet", error)
 
       resolvedWhatsappNumber = fallbackWhatsappNumber
-      adSetId = await createAdSet(config, ctx, campaignId, startAt, endAt, resolvedWhatsappNumber)
+      try {
+        adSetId = await createAdSet(config, ctx, campaignId, startAt, endAt, resolvedWhatsappNumber)
+      } catch (fallbackError) {
+        throw withStep("createAdSetFallback", fallbackError)
+      }
     }
 
     const adIds: string[] = []
 
     for (let index = 1; index <= 4; index += 1) {
-      const creativeId = await createCreative(config, ctx, index, template, resolvedWhatsappNumber, imageHash)
-      const adId = await createAd(config, ctx, adSetId, index, creativeId)
+      let creativeId = ""
+      try {
+        creativeId = await createCreative(config, ctx, index, template, resolvedWhatsappNumber, imageHash)
+      } catch (error) {
+        throw withStep(`createCreative#${index}`, error)
+      }
+      let adId = ""
+      try {
+        adId = await createAd(config, ctx, adSetId, index, creativeId)
+      } catch (error) {
+        throw withStep(`createAd#${index}`, error)
+      }
       adIds.push(adId)
     }
 
@@ -660,7 +842,10 @@ async function createMetaDraft(ctx: MetaAdDraftContext, template: MetaAdsTemplat
       config.adDestination === "WHATSAPP" && isRecoverableWhatsAppError(rawMessage)
         ? "Draft Campaign berhasil dibuat, tetapi setup WhatsApp untuk Ad Set belum dapat diproses otomatis."
         : "Draft Campaign berhasil dibuat, tetapi pembuatan Ad Set/Ads belum tuntas otomatis."
-    const warning = `${prefix} Lanjutkan manual di Ads Manager. Campaign ID: ${campaignId}. Link: ${campaignUrl}. Detail: ${rawMessage}`
+    const capabilityHint = isCapabilityError(rawMessage)
+      ? " Hint: Meta API mengembalikan code=3 (capability). Pastikan app punya use case Marketing API aktif, token System User terbaru, app/asset sudah ter-assign penuh (Ad Account + Page + WhatsApp asset), dan permission ads_management + ads_read + business_management + pages_manage_ads."
+      : ""
+    const warning = `${prefix} Lanjutkan manual di Ads Manager. Campaign ID: ${campaignId}. Link: ${campaignUrl}. Detail: ${rawMessage}.${capabilityHint}`
 
     return {
       campaignId,
@@ -721,7 +906,7 @@ async function duplicateMetaCampaignFromTemplate(ctx: MetaAdDraftContext): Promi
     promotorName: ctx.promotorName,
     campaignCode: ctx.campaignCode,
   })
-  const adSetName = `Ad Set - ${ctx.city} ${formatDateForName(ctx.startDate)}`
+  const adSetName = `Adset ${ctx.city} ${formatDateForName(ctx.startDate)}`
   const lifetimeBudget = Math.max(Math.round(ctx.totalBudget), 10000)
   const promotorWhatsappNumber =
     config.adDestination === "WHATSAPP"
@@ -771,7 +956,12 @@ async function duplicateMetaCampaignFromTemplate(ctx: MetaAdDraftContext): Promi
 
   let adSetId = ""
   const adIds: string[] = []
-  const fallbackImageHash = await ensurePlaceholderImageHash(config)
+  let fallbackImageHash: string | null = null
+  try {
+    fallbackImageHash = await ensurePlaceholderImageHash(config)
+  } catch {
+    fallbackImageHash = null
+  }
   const { bodies, titles, descriptions } = buildTemplateTextOptions(ctx, template)
 
   try {
@@ -856,8 +1046,10 @@ async function duplicateMetaCampaignFromTemplate(ctx: MetaAdDraftContext): Promi
               (Array.isArray(sourceAssetFeed?.carousels) && sourceAssetFeed.carousels.length > 0)
 
             if (!hasAnyVisualAsset) {
-              mergedAssetFeed.images = [{ hash: fallbackImageHash }]
-              mergedAssetFeed.ad_formats = ["SINGLE_IMAGE"]
+              if (fallbackImageHash) {
+                mergedAssetFeed.images = [{ hash: fallbackImageHash }]
+                mergedAssetFeed.ad_formats = ["SINGLE_IMAGE"]
+              }
             }
 
             const newCreative = await graphRequest<{ id: string }>(
@@ -865,7 +1057,7 @@ async function duplicateMetaCampaignFromTemplate(ctx: MetaAdDraftContext): Promi
               `${config.adAccountId}/adcreatives`,
               "POST",
               {
-                name: `${ctx.city} - Ad ${i + 1}`,
+                name: `${ctx.city} - ${i + 1}`,
                 object_story_spec: sourceStorySpec,
                 asset_feed_spec: mergedAssetFeed,
               }
@@ -878,7 +1070,7 @@ async function duplicateMetaCampaignFromTemplate(ctx: MetaAdDraftContext): Promi
             ad.id,
             "POST",
             {
-              name: `${ctx.city} - Ad ${i + 1}`,
+              name: `${ctx.city} - ${i + 1}`,
               status: "PAUSED",
               ...(newCreativeId ? { creative: { creative_id: newCreativeId } } : {}),
             }
@@ -979,6 +1171,8 @@ export async function generateMetaDraftForAdRequestWithMode(
   })
 
   try {
+    const preflightConfig = getMetaConfig(true)
+    const preflight = runMetaPreflight(ad, preflightConfig)
     const template = await getMetaAdsTemplate()
     const ctx: MetaAdDraftContext = {
       adRequestId: ad.id,
@@ -999,6 +1193,9 @@ export async function generateMetaDraftForAdRequestWithMode(
         ? await duplicateMetaCampaignFromTemplate(ctx)
         : await createMetaDraft(ctx, template)
 
+    const warningPrefix =
+      preflight.warnings.length > 0 ? `Preflight: ${preflight.warnings.join(" | ")}. ` : ""
+
     if (result.partial) {
       await db.adRequest.update({
         where: { id: adRequestId },
@@ -1015,7 +1212,7 @@ export async function generateMetaDraftForAdRequestWithMode(
       return {
         ok: true,
         partial: true,
-        message: result.warning || "Draft Campaign berhasil dibuat. Lanjutkan setup manual di Ads Manager.",
+        message: `${warningPrefix}${result.warning || "Draft Campaign berhasil dibuat. Lanjutkan setup manual di Ads Manager."}`,
       }
     }
 
@@ -1034,10 +1231,9 @@ export async function generateMetaDraftForAdRequestWithMode(
 
     return {
       ok: true,
-      message:
-        mode === "DUPLICATE"
-          ? "Template campaign berhasil diduplikasi dan disesuaikan."
-          : "Draft Meta berhasil dibuat.",
+      message: `${warningPrefix}${mode === "DUPLICATE"
+        ? "Template campaign berhasil diduplikasi dan disesuaikan."
+        : "Draft Meta berhasil dibuat."}`,
     }
   } catch (error: any) {
     const message = error?.message || "Gagal membuat draft Meta."

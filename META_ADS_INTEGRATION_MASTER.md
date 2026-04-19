@@ -2,7 +2,7 @@
 
 Dokumen master untuk fitur integrasi otomatis ke Meta Ads.
 Status: `In Progress`  
-Terakhir update: `2026-04-17`
+Terakhir update: `2026-04-20`
 
 ## 1) Tujuan
 - Saat status iklan menjadi `KONTEN_SELESAI`, sistem otomatis membuat draft Meta Ads:
@@ -22,6 +22,7 @@ Terakhir update: `2026-04-17`
 ### 2.2 Struktur Ad
 - `Ad 1 - Ad 3`: tipe `JJ`
 - `Ad 4`: tipe `VO`
+- Naming final ad: `{city} - 1`, `{city} - 2`, `{city} - 3`, `{city} - 4`
 
 ### 2.3 Trigger
 - Trigger utama: saat status menjadi `KONTEN_SELESAI`.
@@ -41,10 +42,12 @@ Terakhir update: `2026-04-17`
 - Gunakan `Campaign Budget`.
 - Tipe budget: `Lifetime Budget`.
 - Nilai budget: dari `nominal budget iklan` di aplikasi.
+- Campaign bid strategy: `Highest volume` (`LOWEST_COST_WITHOUT_CAP`).
 
 ### 2.6 Schedule Rule
 - Timezone: `Asia/Jakarta`.
 - Jadwal mengikuti logika aplikasi (start/end date yang sudah dipakai di sistem).
+- Adset name final: `Adset {city} {date}`.
 
 ### 2.9 Rule Nomor WhatsApp CTWA
 - Jika mode `META_AD_DESTINATION=WHATSAPP`, sistem memakai nomor WhatsApp milik promotor (`user.phone`) secara otomatis.
@@ -70,6 +73,11 @@ Terakhir update: `2026-04-17`
 - Nomor WhatsApp adset prioritaskan nomor promotor.
 - Jika nomor promotor ditolak Meta (mis. belum terhubung ke page/WABA), sistem otomatis fallback ke nomor default:
   - `+62 812-2011-519` (`META_WHATSAPP_NUMBER`).
+- Conversion location: `Message destinations` dengan destination `WhatsApp` (manual).
+- Performance goal: `Maximize number of conversations`.
+- Cost per result goal: `None`.
+- CTA: `Send WhatsApp message`.
+- Chat builder target: `DefaultStifin` (dikonfigurasi via `META_CHAT_TEMPLATE_NAME`).
 
 ### 2.8 Dashboard Advertiser
 - Tambah fitur input template caption/headline/description di dashboard Advertiser.
@@ -93,6 +101,8 @@ Terakhir update: `2026-04-17`
 - `META_WHATSAPP_NUMBER` (wajib jika `META_AD_DESTINATION=WHATSAPP`)
 - `AUTO_CREATE_ADSET_WITHOUT_WA` (opsional, `true/false`, mode uji bypass CTWA)
 - `META_TEMPLATE_CAMPAIGN_ID` (wajib jika mode `DUPLICATE`)
+- `META_CHAT_TEMPLATE_NAME` (default: `DefaultStifin`)
+- `META_DEFAULT_VIDEO_ID` (opsional fallback: 1 video dipakai untuk Ad 1-4 saat konten final belum tersedia)
 - `META_PIXEL_ID` (wajib jika `META_AD_DESTINATION=WEBSITE`)
 - `META_DESTINATION_URL` (wajib jika `META_AD_DESTINATION=WEBSITE`)
 
