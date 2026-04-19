@@ -9,6 +9,15 @@ import {
 } from "@/lib/force-password-change"
 import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/lib/user-enabled"
 
+async function safeFindSystemSetting(key: string) {
+  try {
+    return await db.systemSetting.findUnique({ where: { key } })
+  } catch (error) {
+    console.warn(`[LOGIN] SystemSetting read failed for key="${key}"`, error)
+    return null
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { email, password } = await req.json()
@@ -36,18 +45,14 @@ export async function POST(req: Request) {
     }
 
     if (["PROMOTOR", "KONTEN_KREATOR", "STIFIN"].includes(user.role)) {
-      const enabledSetting = await db.systemSetting.findUnique({
-        where: { key: USER_ENABLED_SETTING_KEY },
-      })
+      const enabledSetting = await safeFindSystemSetting(USER_ENABLED_SETTING_KEY)
       const enabledMap = parseUserEnabledMap(enabledSetting?.value)
       if (!isUserEnabled(enabledMap, user.id)) {
         return NextResponse.json({ error: "Akun Anda sedang dinonaktifkan. Hubungi Advertiser." }, { status: 403 })
       }
     }
 
-    const forceSetting = await db.systemSetting.findUnique({
-      where: { key: FORCE_PASSWORD_CHANGE_KEY },
-    })
+    const forceSetting = await safeFindSystemSetting(FORCE_PASSWORD_CHANGE_KEY)
     const forceMap = parseForcePasswordChangeMap(forceSetting?.value)
     const shouldForcePasswordChange = mustChangePassword(forceMap, user.id)
 

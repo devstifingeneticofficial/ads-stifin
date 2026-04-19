@@ -8,6 +8,17 @@ import {
   parseForcePasswordChangeMap,
 } from "@/lib/force-password-change"
 
+async function safeFindForceSetting() {
+  try {
+    return await db.systemSetting.findUnique({
+      where: { key: FORCE_PASSWORD_CHANGE_KEY },
+    })
+  } catch (error) {
+    console.warn("[SESSION] SystemSetting read failed for force password map", error)
+    return null
+  }
+}
+
 export async function GET() {
   try {
     const session = await getSession()
@@ -40,9 +51,7 @@ export async function GET() {
           role: true,
         },
       }),
-      db.systemSetting.findUnique({
-        where: { key: FORCE_PASSWORD_CHANGE_KEY },
-      }),
+      safeFindForceSetting(),
     ])
 
     if (!user || !actorUser) {
