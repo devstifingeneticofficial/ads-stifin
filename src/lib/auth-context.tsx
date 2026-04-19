@@ -61,7 +61,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password }),
       })
 
-      const data = await res.json()
+      let data: any = null
+      try {
+        data = await res.json()
+      } catch {
+        const text = await res.text().catch(() => "")
+        data = { error: text || `Login gagal (${res.status})` }
+      }
 
       if (!res.ok) {
         return { success: false, error: data.error || "Gagal login" }
