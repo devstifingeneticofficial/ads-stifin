@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/auth-context"
 import { useState, useEffect } from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -238,14 +239,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ${
+        className={`fixed lg:sticky lg:top-0 lg:self-start inset-y-0 left-0 z-50 w-64 lg:h-screen bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
       >
         {/* Sidebar Header */}
         <div className="p-4 flex items-center gap-3 border-b border-slate-100">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-rose-600 flex items-center justify-center shadow-md">
-            <Building2 className="w-5 h-5 text-white" />
+          <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 overflow-hidden shadow-sm">
+            <Image
+              src="/logo-stifin.jpg"
+              alt="Logo STIFIn"
+              width={40}
+              height={40}
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-bold text-slate-900 text-sm truncate">STIFIn</h2>

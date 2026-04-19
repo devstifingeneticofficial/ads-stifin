@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "STIFIn - Sistem Manajemen Iklan & Promotor",
+  title: "STIFIn - Sistem Manajemen Iklan Promotor STIFIn",
   description: "Sistem manajemen iklan untuk Promotor, Konten Kreator, dan Advertiser STIFIn",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
@@ -26,8 +26,8 @@ export const metadata: Metadata = {
     title: "STIFIn",
   },
   icons: {
-    icon: "/pwa-192x192.png",
-    apple: "/pwa-192x192.png",
+    icon: "/logo-stifin.jpg",
+    apple: "/logo-stifin.jpg",
   },
 };
 

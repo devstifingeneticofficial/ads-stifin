@@ -760,6 +760,7 @@ export default function KontenKreatorDashboard() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-slate-100/50 p-1 border">
           <TabsTrigger value="MENUNGGU_KONTEN" className="gap-2 relative">
+            <Clock className="h-4 w-4" />
             Menunggu
             {menungguKontenCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] text-white font-bold">
@@ -768,6 +769,7 @@ export default function KontenKreatorDashboard() {
             )}
           </TabsTrigger>
           <TabsTrigger value="DIPROSES" className="gap-2 relative">
+            <Play className="h-4 w-4" />
             Diproses
             {diprosesCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white font-bold">
@@ -776,6 +778,7 @@ export default function KontenKreatorDashboard() {
             )}
           </TabsTrigger>
           <TabsTrigger value="SELESAI" className="gap-2">
+            <CheckCircle className="h-4 w-4" />
             Selesai
           </TabsTrigger>
           <TabsTrigger value="GAJI" className="gap-2">

@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Building2, Eye, EyeOff } from "lucide-react"
+import { Loader2, Eye, EyeOff } from "lucide-react"
+import Image from "next/image"
 import {
   Dialog,
   DialogContent,
@@ -122,11 +123,18 @@ export function LoginForm() {
       <div className="w-full max-w-md space-y-6">
         {/* Logo & Brand */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 shadow-lg shadow-rose-200">
-            <Building2 className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-white shadow-lg border border-slate-200 overflow-hidden">
+            <Image
+              src="/logo-stifin.jpg"
+              alt="Logo STIFIn"
+              width={64}
+              height={64}
+              className="w-full h-full object-cover"
+              priority
+            />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">STIFIn</h1>
-          <p className="text-slate-500">Sistem Manajemen Iklan & Promotor</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">STIFIn Ads</h1>
+          <p className="text-slate-500">Sistem Manajemen Iklan Promotor STIFIn</p>
         </div>
 
         {/* Login Card */}
