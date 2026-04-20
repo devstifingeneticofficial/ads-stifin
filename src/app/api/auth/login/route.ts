@@ -28,7 +28,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email dan password wajib diisi" }, { status: 400 })
     }
 
-    const user = await db.user.findUnique({ where: { email } })
+    let user
+    try {
+      user = await db.user.findUnique({ where: { email } })
+    } catch (dbError) {
+      console.error("[LOGIN] Database connection failed:", {
+        error: String(dbError),
+        message: dbError instanceof Error ? dbError.message : "Unknown DB error",
+        stack: dbError instanceof Error ? dbError.stack : undefined,
+        databaseUrl: process.env.DATABASE_URL ? "configured" : "NOT SET",
+        nodeEnv: process.env.NODE_ENV,
+      })
+      return NextResponse.json({ error: "Database connection error" }, { status: 503 })
+    }
 
     if (!user || typeof user.password !== "string") {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
