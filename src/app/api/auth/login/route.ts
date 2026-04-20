@@ -20,7 +20,9 @@ async function safeFindSystemSetting(key: string) {
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json()
+    const body = await req.json().catch(() => null)
+    const email = typeof body?.email === "string" ? body.email.trim() : ""
+    const password = typeof body?.password === "string" ? body.password : ""
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email dan password wajib diisi" }, { status: 400 })
@@ -28,7 +30,7 @@ export async function POST(req: Request) {
 
     const user = await db.user.findUnique({ where: { email } })
 
-    if (!user) {
+    if (!user || typeof user.password !== "string") {
       return NextResponse.json({ error: "Email atau password salah" }, { status: 401 })
     }
 
