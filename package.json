@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "prebuild": "prisma generate",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy:cf": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
