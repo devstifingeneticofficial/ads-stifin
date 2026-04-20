@@ -12,11 +12,6 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  serverExternalPackages: [
-    "@prisma/client",
-    "bcryptjs",
-    "jsonwebtoken",
-  ],
 };
 
 export default nextConfig;
