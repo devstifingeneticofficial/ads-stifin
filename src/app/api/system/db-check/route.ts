@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server"
-import { db } from "@/lib/db"
 
 export async function GET(req: Request) {
   try {
@@ -10,6 +9,8 @@ export async function GET(req: Request) {
     if (!expected || key !== expected) {
       return NextResponse.json({ ok: false, error: "Akses ditolak" }, { status: 403 })
     }
+
+    const { db } = await import("@/lib/db")
 
     const nowRows = await db.$queryRaw<Array<{ now: Date }>>`SELECT NOW() as now`
     const usersRows = await db.$queryRaw<Array<{ count: bigint | number }>>`SELECT COUNT(*)::bigint as count FROM "User"`
@@ -36,4 +37,3 @@ export async function GET(req: Request) {
     )
   }
 }
-
