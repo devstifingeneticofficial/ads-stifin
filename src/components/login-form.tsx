@@ -18,20 +18,6 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 
-const demoAccounts = [
-  { email: "roy@stifin.com", role: "PROMOTOR", name: "Roy" },
-  { email: "sari@stifin.com", role: "PROMOTOR", name: "Sari" },
-  { email: "creator@stifin.com", role: "KONTEN KREATOR", name: "Admin Creator" },
-  { email: "ads@stifin.com", role: "ADVERTISER", name: "Admin Ads" },
-  { email: "admin@stifin.com", role: "STIFIN", name: "STIFIn Admin" },
-]
-
-const roleColors: Record<string, string> = {
-  PROMOTOR: "bg-amber-100 text-amber-800 border-amber-200",
-  "KONTEN KREATOR": "bg-emerald-100 text-emerald-800 border-emerald-200",
-  ADVERTISER: "bg-purple-100 text-purple-800 border-purple-200",
-  STIFIN: "bg-rose-100 text-rose-800 border-rose-200",
-}
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
@@ -53,17 +39,6 @@ export function LoginForm() {
     setError("")
 
     const result = await login(email, password)
-    if (!result.success) {
-      setError(result.error || "Login gagal")
-    }
-  }
-
-  const handleDemoLogin = async (demoEmail: string) => {
-    setEmail(demoEmail)
-    setPassword("password123")
-    setError("")
-
-    const result = await login(demoEmail, "password123")
     if (!result.success) {
       setError(result.error || "Login gagal")
     }
@@ -308,36 +283,6 @@ export function LoginForm() {
             </form>
           </DialogContent>
         </Dialog>
-
-        {/* Demo Accounts */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-slate-500">Demo Accounts</CardTitle>
-            <CardDescription className="text-xs">Klik untuk login otomatis (password: password123)</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {demoAccounts.map((account) => (
-                <button
-                  key={account.email}
-                  type="button"
-                  onClick={() => handleDemoLogin(account.email)}
-                  className="w-full flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`px-2 py-1 rounded-md text-xs font-semibold border ${roleColors[account.role] || "bg-slate-100 text-slate-700"}`}>
-                      {account.role}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-slate-900">{account.name}</div>
-                      <div className="text-xs text-slate-500">{account.email}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
 
         <p className="text-center text-xs text-slate-400">
           © 2025 STIFIn - Tes Minat & Bakat Genetik

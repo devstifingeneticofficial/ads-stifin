@@ -5,7 +5,7 @@ import { USER_ENABLED_SETTING_KEY, isUserEnabled, parseUserEnabledMap } from "@/
 import { FORCE_PASSWORD_CHANGE_KEY, parseForcePasswordChangeMap } from "@/lib/force-password-change"
 
 const TOGGLABLE_ROLES = new Set(["KONTEN_KREATOR", "STIFIN", "PROMOTOR"])
-const DELETABLE_ROLES = new Set(["PROMOTOR"])
+const DELETABLE_ROLES = new Set(["PROMOTOR", "KONTEN_KREATOR", "STIFIN"])
 
 export async function GET() {
   try {
@@ -126,17 +126,34 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 })
     }
     if (!DELETABLE_ROLES.has(user.role)) {
-      return NextResponse.json({ error: "Hanya user Promotor yang dapat dihapus" }, { status: 400 })
+      return NextResponse.json({ error: "Role user ini tidak dapat dihapus" }, { status: 400 })
     }
 
-    const hasAdRequests = await db.adRequest.count({
-      where: { promotorId: user.id },
-    })
-    if (hasAdRequests > 0) {
-      return NextResponse.json(
-        { error: "Promotor ini sudah memiliki data iklan. Gunakan ON/OFF untuk menonaktifkan." },
-        { status: 400 }
-      )
+    // Keep historical operational data intact.
+    // If a user already has transactional records, force ON/OFF instead of hard delete.
+    if (user.role === "PROMOTOR") {
+      const hasAdRequests = await db.adRequest.count({
+        where: { promotorId: user.id },
+      })
+      if (hasAdRequests > 0) {
+        return NextResponse.json(
+          { error: "Promotor ini sudah memiliki data iklan. Gunakan ON/OFF untuk menonaktifkan." },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (user.role === "KONTEN_KREATOR") {
+      const [assignedCount, payoutBatchCount] = await Promise.all([
+        db.adRequest.count({ where: { contentCreatorId: user.id } }),
+        db.creatorPayoutBatch.count({ where: { creatorId: user.id } }),
+      ])
+      if (assignedCount > 0 || payoutBatchCount > 0) {
+        return NextResponse.json(
+          { error: "Kreator ini sudah memiliki riwayat assignment/pencairan. Gunakan ON/OFF untuk menonaktifkan." },
+          { status: 400 }
+        )
+      }
     }
 
     const [enabledSetting, forceSetting] = await Promise.all([

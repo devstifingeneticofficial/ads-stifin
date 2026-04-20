@@ -1283,6 +1283,87 @@ function extractCampaignCodeFromName(name: string): string | null {
   return match[1].toUpperCase()
 }
 
+function normalizeNameToken(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+}
+
+function parseLegacyMetaNote(note: string | null | undefined): {
+  manualDuration: number | null
+  manualClients: number | null
+} {
+  const source = note || ""
+  const durationMatch = source.match(/manual_duration=(\d+)/i)
+  const clientsMatch = source.match(/manual_clients=(\d+)/i)
+  const manualDuration = durationMatch ? Math.max(1, Number.parseInt(durationMatch[1], 10)) : null
+  const manualClients = clientsMatch ? Math.max(0, Number.parseInt(clientsMatch[1], 10)) : null
+  return {
+    manualDuration: Number.isFinite(manualDuration as number) ? manualDuration : null,
+    manualClients: Number.isFinite(manualClients as number) ? manualClients : null,
+  }
+}
+
+function parseLegacyCampaignName(name: string): {
+  city: string
+  startDate: Date
+  endDate: Date | null
+  durationDays: number
+  promotorName: string
+} | null {
+  const cleanName = name.replace(/\[[A-Z0-9]{4,20}\]\s*$/i, "").trim()
+  const match = cleanName.match(/^(.+?)\s+(\d{1,2}(?:-\d{1,2})?\s+[A-Za-z]+(?:\s+\d{4}))\s*-\s*(.+)$/i)
+  if (!match) return null
+
+  const city = match[1].trim()
+  const datePart = match[2].trim()
+  const promotorName = match[3].trim()
+
+  const dateMatch = datePart.match(/^(\d{1,2})(?:-(\d{1,2}))?\s+([A-Za-z]+)\s+(\d{4})$/)
+  if (!dateMatch) return null
+
+  const dayStart = Number.parseInt(dateMatch[1], 10)
+  const dayEndRaw = dateMatch[2]
+  const monthName = dateMatch[3].toLowerCase()
+  const year = Number.parseInt(dateMatch[4], 10)
+
+  const monthMap: Record<string, number> = {
+    januari: 0,
+    febuari: 1,
+    februari: 1,
+    maret: 2,
+    april: 3,
+    mei: 4,
+    juni: 5,
+    juli: 6,
+    agustus: 7,
+    september: 8,
+    oktober: 9,
+    november: 10,
+    desember: 11,
+    january: 0,
+    february: 1,
+    march: 2,
+    may: 4,
+    june: 5,
+    july: 6,
+    august: 7,
+    october: 9,
+    december: 11,
+  }
+
+  const month = monthMap[monthName]
+  if (month === undefined || Number.isNaN(dayStart) || Number.isNaN(year)) return null
+
+  const startDate = new Date(Date.UTC(year, month, dayStart, 0, 0, 0))
+  const dayEnd = dayEndRaw ? Number.parseInt(dayEndRaw, 10) : null
+  const endDate = dayEnd ? new Date(Date.UTC(year, month, dayEnd, 0, 0, 0)) : null
+  const durationDays = dayEnd ? Math.max(dayEnd - dayStart + 1, 1) : 1
+
+  return { city, startDate, endDate, durationDays, promotorName }
+}
+
 function getActionValue(
   actions: Array<{ action_type?: string; value?: string }> | undefined,
   targetTypes: string[]
@@ -1349,15 +1430,41 @@ export async function syncMetaPerformance(): Promise<{
       id: true,
       campaignCode: true,
       metaCampaignId: true,
+      promotorNote: true,
+      promotor: { select: { name: true } },
     },
     orderBy: { updatedAt: "desc" },
     take: 300,
   })
 
   const byCode = new Map<string, { id: string; metaCampaignId: string | null }>()
+  const byId = new Map<string, { metaCampaignId: string | null }>()
+  const usedCampaignIds = new Set<string>()
+  const legacyQueue: Array<{
+    id: string
+    promotorName: string
+    manualDuration: number | null
+    manualClients: number | null
+  }> = []
+
   for (const item of adRequests) {
+    byId.set(item.id, { metaCampaignId: item.metaCampaignId })
+    if (item.metaCampaignId) {
+      usedCampaignIds.add(item.metaCampaignId)
+    }
     if (item.campaignCode) {
       byCode.set(item.campaignCode.toUpperCase(), { id: item.id, metaCampaignId: item.metaCampaignId })
+      continue
+    }
+
+    if ((item.promotorNote || "").startsWith("[LEGACY_META]") && !item.metaCampaignId) {
+      const manual = parseLegacyMetaNote(item.promotorNote)
+      legacyQueue.push({
+        id: item.id,
+        promotorName: item.promotor.name,
+        manualDuration: manual.manualDuration,
+        manualClients: manual.manualClients,
+      })
     }
   }
 
@@ -1369,6 +1476,19 @@ export async function syncMetaPerformance(): Promise<{
     string,
     Array<{ id: string; status?: string; effective_status?: string; updated_time?: string }>
   >()
+  const parsedCampaigns: Array<{
+    id: string
+    status?: string
+    effective_status?: string
+    updated_time?: string
+    parsed: {
+      city: string
+      startDate: Date
+      endDate: Date | null
+      durationDays: number
+      promotorName: string
+    } | null
+  }> = []
 
   const scoreCampaignStatus = (status?: string, effectiveStatus?: string): number => {
     const normalized = `${effectiveStatus || status || ""}`.toUpperCase()
@@ -1404,6 +1524,16 @@ export async function syncMetaPerformance(): Promise<{
       candidatesByCode.set(code, bucket)
     }
 
+    for (const campaign of campaigns) {
+      parsedCampaigns.push({
+        id: campaign.id,
+        status: campaign.status,
+        effective_status: campaign.effective_status,
+        updated_time: campaign.updated_time,
+        parsed: parseLegacyCampaignName(campaign.name || ""),
+      })
+    }
+
     after = page.paging?.cursors?.after || null
   } while (after)
 
@@ -1433,13 +1563,77 @@ export async function syncMetaPerformance(): Promise<{
       },
     })
     local.metaCampaignId = selected.id
+    usedCampaignIds.add(selected.id)
+    byId.set(local.id, { metaCampaignId: selected.id })
+    linkedCount += 1
+  }
+
+  // 1b) Auto-link legacy import by campaign structure:
+  // {city} {date} - {nama-promotor}
+  for (const legacy of legacyQueue) {
+    const promotorToken = normalizeNameToken(legacy.promotorName)
+    if (!promotorToken) continue
+
+    const selected = parsedCampaigns
+      .filter((item) => {
+        if (!item.parsed) return false
+        if (usedCampaignIds.has(item.id)) return false
+        const campaignPromotorToken = normalizeNameToken(item.parsed.promotorName)
+        return campaignPromotorToken === promotorToken
+      })
+      .sort((a, b) => {
+        const statusScoreDiff =
+          scoreCampaignStatus(b.status, b.effective_status) -
+          scoreCampaignStatus(a.status, a.effective_status)
+        if (statusScoreDiff !== 0) return statusScoreDiff
+        const updatedA = a.updated_time ? new Date(a.updated_time).getTime() : 0
+        const updatedB = b.updated_time ? new Date(b.updated_time).getTime() : 0
+        return updatedB - updatedA
+      })[0]
+
+    if (!selected || !selected.parsed) continue
+
+    const nextDuration = legacy.manualDuration || selected.parsed.durationDays || 1
+
+    await db.adRequest.update({
+      where: { id: legacy.id },
+      data: {
+        city: selected.parsed.city,
+        startDate: selected.parsed.startDate,
+        testEndDate: selected.parsed.endDate,
+        durationDays: nextDuration,
+        metaCampaignId: selected.id,
+        metaDraftUpdatedAt: new Date(),
+      },
+    })
+
+    if (legacy.manualClients !== null) {
+      await db.promotorResult.upsert({
+        where: { adRequestId: legacy.id },
+        update: {
+          totalClients: legacy.manualClients,
+          status: "VALID",
+          note: "Legacy import by advertiser",
+        },
+        create: {
+          adRequestId: legacy.id,
+          totalClients: legacy.manualClients,
+          status: "VALID",
+          note: "Legacy import by advertiser",
+        },
+      })
+    }
+
+    usedCampaignIds.add(selected.id)
+    byId.set(legacy.id, { metaCampaignId: selected.id })
     linkedCount += 1
   }
 
   // 2) Pull insights and upsert AdReport
   let updatedCount = 0
   let skippedCount = 0
-  const refreshTargets = Array.from(byCode.values())
+  const refreshTargets = Array.from(byId.entries())
+    .map(([id, value]) => ({ id, metaCampaignId: value.metaCampaignId }))
     .filter((item) => !!item.metaCampaignId)
     .slice(0, 200)
 

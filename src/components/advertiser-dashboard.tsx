@@ -122,6 +122,31 @@ interface MetaAdsTemplate {
   headlines: string[]
   description: string
 }
+
+interface LegacyImportGeneratedItem {
+  promotorName: string
+  count: number
+  campaigns: Array<{
+    id: string
+    name: string
+    city: string
+    startDate: string
+    endDate: string | null
+    durationDays: number
+  }>
+}
+
+interface LegacyImportExecutionResult {
+  createdCount: number
+  skippedCount: number
+  totalCandidates: number
+  syncResult?: {
+    linkedCount: number
+    updatedCount: number
+    skippedCount: number
+  }
+}
+
 type MetaDraftMode = "GENERATE" | "DUPLICATE"
 const META_DRAFT_MODE_STORAGE_KEY = "meta_draft_mode_preference_v1"
 const CONFIG_BACKUP_LAST_AT_STORAGE_KEY = "config_backup_last_at_v1"
@@ -343,6 +368,63 @@ const buildCalendarCopyText = (ad: AdRequest): string => {
   return `📅 ${day}, ${date} di Kota ${ad.city}!`
 }
 
+const formatPromotorNoteHuman = (
+  note: string
+): { title: string; lines: string[]; variant: "legacy" | "default" } => {
+  if (!note.startsWith("[LEGACY_META]")) {
+    return {
+      title: "Catatan Promotor",
+      lines: [note],
+      variant: "default",
+    }
+  }
+
+  const payload = note.replace("[LEGACY_META]", "").trim()
+  const pairs = Array.from(payload.matchAll(/([a-zA-Z_]+)=([^\s]+)/g))
+  const map = new Map<string, string>()
+  for (const [, key, value] of pairs) {
+    map.set(key, value === "null" ? "" : value)
+  }
+
+  const lines: string[] = []
+  const importedAt = map.get("imported_at")
+  if (importedAt) {
+    const parsed = new Date(importedAt)
+    if (!Number.isNaN(parsed.getTime())) {
+      lines.push(`Data historis diimpor pada ${formatDateTimeFromDate(parsed)}.`)
+    } else {
+      lines.push("Data historis diimpor dari Meta Ads.")
+    }
+  } else {
+    lines.push("Data historis diimpor dari Meta Ads.")
+  }
+
+  const sourceCampaign = map.get("source_campaign")
+  if (sourceCampaign) {
+    lines.push(`Sumber campaign ID: ${sourceCampaign}.`)
+  }
+
+  const manualDuration = map.get("manual_duration")
+  if (manualDuration) {
+    lines.push(`Durasi diatur manual: ${manualDuration} hari.`)
+  }
+
+  const manualClients = map.get("manual_clients")
+  if (manualClients) {
+    lines.push(`Jumlah klien awal diisi manual: ${manualClients}.`)
+  }
+
+  if (map.get("imported_bulk") === "1") {
+    lines.push("Metode import: Massal per promotor.")
+  }
+
+  return {
+    title: "Catatan Sinkron Meta",
+    lines,
+    variant: "legacy",
+  }
+}
+
 const formatTestDate = (start: string, end?: string | null) => {
   const s = new Date(start)
   const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
@@ -545,6 +627,13 @@ export default function AdvertiserDashboard() {
   const [metaTesting, setMetaTesting] = useState(false)
   const [metaSyncingPerformance, setMetaSyncingPerformance] = useState(false)
   const [metaSavingTemplate, setMetaSavingTemplate] = useState(false)
+  const [legacyPromotorId, setLegacyPromotorId] = useState("")
+  const [legacyDurationDays, setLegacyDurationDays] = useState("")
+  const [legacyTotalClients, setLegacyTotalClients] = useState("")
+  const [legacyPreviewing, setLegacyPreviewing] = useState(false)
+  const [legacyExecuting, setLegacyExecuting] = useState(false)
+  const [legacyGeneratedItem, setLegacyGeneratedItem] = useState<LegacyImportGeneratedItem | null>(null)
+  const [legacyExecutionResult, setLegacyExecutionResult] = useState<LegacyImportExecutionResult | null>(null)
   const [proofPreviewOpen, setProofPreviewOpen] = useState(false)
   const [proofPreviewUrl, setProofPreviewUrl] = useState("")
   const [proofPreviewTitle, setProofPreviewTitle] = useState("Bukti Transfer")
@@ -634,6 +723,10 @@ export default function AdvertiserDashboard() {
   }
 
   const promotorData = promotorStats(adRequests)
+  const promotorUsersForLegacy = managedUsers.filter((item) => item.role === "PROMOTOR")
+  const legacyImportedRequests = adRequests.filter((item) =>
+    (item.promotorNote || "").startsWith("[LEGACY_META]")
+  )
   const creatorUsers = managedUsers.filter((u) => u.role === "KONTEN_KREATOR")
   const activeCreatorCount = creatorUsers.filter((u) => u.isEnabled).length
   const inactiveCreatorCount = Math.max(creatorUsers.length - activeCreatorCount, 0)
@@ -1009,7 +1102,9 @@ export default function AdvertiserDashboard() {
   }
 
   const handleDeleteManagedUser = async (userId: string) => {
-    if (!confirm("Hapus user promotor ini? Aksi ini tidak bisa dibatalkan.")) return
+    const targetUser = managedUsers.find((u) => u.id === userId)
+    const roleLabel = targetUser ? getRoleLabel(targetUser.role) : "user"
+    if (!confirm(`Hapus user ${roleLabel} ini? Aksi ini tidak bisa dibatalkan.`)) return
     setDeletingUserId(userId)
     try {
       const res = await fetch(`/api/users/manage?userId=${encodeURIComponent(userId)}`, {
@@ -1021,7 +1116,7 @@ export default function AdvertiserDashboard() {
       setLinkedAccounts((prev) =>
         prev.filter((item) => item.owner.id !== userId && item.profile.id !== userId)
       )
-      toast.success("User promotor berhasil dihapus")
+      toast.success("User berhasil dihapus")
     } catch (error: any) {
       toast.error(error?.message || "Gagal menghapus user")
     } finally {
@@ -1355,6 +1450,78 @@ export default function AdvertiserDashboard() {
     }
   }
 
+  const handlePreviewLegacyCampaigns = async () => {
+    if (!legacyPromotorId) {
+      toast.error("Pilih promotor terlebih dahulu")
+      return
+    }
+
+    setLegacyPreviewing(true)
+    setLegacyExecutionResult(null)
+    try {
+      const res = await fetch("/api/meta/legacy-import/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          promotorId: legacyPromotorId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Gagal sinkron campaign promotor")
+      }
+
+      const selectedPromotor = promotorUsersForLegacy.find((item) => item.id === legacyPromotorId)
+      setLegacyGeneratedItem({
+        promotorName: selectedPromotor?.name || "-",
+        count: data.count || 0,
+        campaigns: data.campaigns || [],
+      })
+      toast.success(`Ditemukan ${data.count || 0} campaign untuk promotor ini`)
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal sinkron campaign promotor")
+    } finally {
+      setLegacyPreviewing(false)
+    }
+  }
+
+  const handleExecuteLegacyCampaigns = async () => {
+    if (!legacyPromotorId) {
+      toast.error("Pilih promotor terlebih dahulu")
+      return
+    }
+
+    setLegacyExecuting(true)
+    try {
+      const res = await fetch("/api/meta/legacy-import/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          promotorId: legacyPromotorId,
+          durationDays: legacyDurationDays ? Number.parseInt(legacyDurationDays, 10) : undefined,
+          totalClients: legacyTotalClients ? Number.parseInt(legacyTotalClients, 10) : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Gagal eksekusi import campaign historis")
+      }
+
+      setLegacyExecutionResult({
+        createdCount: data.createdCount || 0,
+        skippedCount: data.skippedCount || 0,
+        totalCandidates: data.totalCandidates || 0,
+        syncResult: data.syncResult,
+      })
+      toast.success(`Import selesai: ${data.createdCount || 0} dibuat, ${data.skippedCount || 0} dilewati`)
+      await fetchAdRequests(false)
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal eksekusi import campaign historis")
+    } finally {
+      setLegacyExecuting(false)
+    }
+  }
+
   const handleCopyText = async (text: string, label: string) => {
     if (!text.trim()) {
       toast.error(`${label} masih kosong`)
@@ -1651,12 +1818,38 @@ export default function AdvertiserDashboard() {
                         </div>
                       )}
 
-                      {ad.promotorNote && (
-                        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-1">
-                          <p className="text-[9px] uppercase font-bold text-amber-600 tracking-wider mb-0.5">Catatan Promotor</p>
-                          <p className="text-xs text-amber-900 font-medium">{ad.promotorNote}</p>
-                        </div>
-                      )}
+                      {ad.promotorNote && (() => {
+                        const noteInfo = formatPromotorNoteHuman(ad.promotorNote)
+                        return (
+                          <div
+                            className={`rounded-lg px-3 py-2 mb-1 border ${
+                              noteInfo.variant === "legacy"
+                                ? "bg-amber-50 border-amber-100"
+                                : "bg-slate-50 border-slate-200"
+                            }`}
+                          >
+                            <p
+                              className={`text-[9px] uppercase font-bold tracking-wider mb-0.5 ${
+                                noteInfo.variant === "legacy" ? "text-amber-600" : "text-slate-600"
+                              }`}
+                            >
+                              {noteInfo.title}
+                            </p>
+                            <div className="space-y-0.5">
+                              {noteInfo.lines.map((line, index) => (
+                                <p
+                                  key={`${ad.id}-note-${index}`}
+                                  className={`text-xs font-medium ${
+                                    noteInfo.variant === "legacy" ? "text-amber-900" : "text-slate-800"
+                                  }`}
+                                >
+                                  {line}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })()}
 
                       <div className="pt-1 space-y-2">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1793,6 +1986,150 @@ export default function AdvertiserDashboard() {
               </CardContent>
             </Card>
           )}
+
+          <Card className="shadow-none border-slate-100">
+            <CardHeader>
+              <CardTitle className="text-base">Import Iklan Lama (Sebelum Aplikasi)</CardTitle>
+              <CardDescription>
+                Cukup pilih promotor. Durasi dan jumlah klien boleh kosong. Sistem akan identifikasi otomatis dari format nama campaign Meta: {"{city} {date} - {nama-promotor}"}.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Promotor</Label>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={legacyPromotorId}
+                    onChange={(e) => setLegacyPromotorId(e.target.value)}
+                  >
+                    <option value="">Pilih promotor</option>
+                    {promotorUsersForLegacy.map((promotor) => (
+                      <option key={promotor.id} value={promotor.id}>
+                        {promotor.name} ({promotor.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Durasi (opsional)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={legacyDurationDays}
+                    onChange={(e) => setLegacyDurationDays(e.target.value)}
+                    placeholder="Contoh: 3"
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs">Jumlah Klien (opsional)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={legacyTotalClients}
+                    onChange={(e) => setLegacyTotalClients(e.target.value)}
+                    placeholder="Contoh: 45"
+                    className="h-9 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  size="sm"
+                  className="h-9 w-full sm:w-auto"
+                  onClick={handlePreviewLegacyCampaigns}
+                  disabled={legacyPreviewing}
+                >
+                  {legacyPreviewing ? "Sinkron..." : "Sinkron Campaign Promotor"}
+                </Button>
+                {legacyGeneratedItem && legacyGeneratedItem.count > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 w-full sm:w-auto gap-2"
+                    onClick={handleExecuteLegacyCampaigns}
+                    disabled={legacyExecuting}
+                  >
+                    <RefreshCcw className={`h-4 w-4 ${legacyExecuting ? "animate-spin" : ""}`} />
+                    {legacyExecuting ? "Eksekusi..." : `Eksekusi Import (${legacyGeneratedItem.count})`}
+                  </Button>
+                )}
+              </div>
+
+              {legacyGeneratedItem && (
+                <div className="rounded-md border bg-slate-50 p-3 space-y-2">
+                  <p className="text-xs text-slate-700">
+                    Preview campaign historis untuk promotor <span className="font-semibold">{legacyGeneratedItem.promotorName}</span>.
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Klik Eksekusi Import untuk memasukkan semua campaign terdeteksi ke dashboard.
+                  </p>
+                  <p className="text-xs text-slate-700">
+                    Jumlah campaign terdeteksi: <span className="font-semibold">{legacyGeneratedItem.count}</span>
+                  </p>
+                  {legacyGeneratedItem.campaigns.length > 0 && (
+                    <div className="max-h-44 overflow-y-auto rounded border bg-white p-2 space-y-1">
+                      {legacyGeneratedItem.campaigns.slice(0, 20).map((campaign) => (
+                        <p key={campaign.id} className="text-[11px] text-slate-700 break-all">
+                          {campaign.name}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {legacyExecutionResult && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 space-y-1">
+                  <p className="text-xs text-emerald-800">
+                    Eksekusi selesai: {legacyExecutionResult.createdCount} dibuat, {legacyExecutionResult.skippedCount} dilewati.
+                  </p>
+                  {legacyExecutionResult.syncResult && (
+                    <p className="text-xs text-emerald-800">
+                      Sinkron Meta: {legacyExecutionResult.syncResult.linkedCount} mapping, {legacyExecutionResult.syncResult.updatedCount} report diperbarui.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {legacyImportedRequests.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">Daftar Import Historis Terbaru</p>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {legacyImportedRequests.slice(0, 20).map((item) => (
+                      <div key={item.id} className="rounded-md border p-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline" className="font-mono text-[10px]">
+                            {item.campaignCode || "NO-CODE"}
+                          </Badge>
+                          <p className="text-xs font-medium">
+                            {item.city} - {formatDate(item.startDate)} - {item.promotor.name}
+                          </p>
+                          <Badge
+                            variant="outline"
+                            className={
+                              item.metaCampaignId
+                                ? "border-emerald-200 text-emerald-700 bg-emerald-50"
+                                : "border-amber-200 text-amber-700 bg-amber-50"
+                            }
+                          >
+                            {item.metaCampaignId ? "Tersambung ke Meta" : "Belum tersambung"}
+                          </Badge>
+                        </div>
+                        {item.metaCampaignId && (
+                          <p className="text-[11px] text-muted-foreground mt-1">Campaign ID: {item.metaCampaignId}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="shadow-none border-slate-100">
             <CardHeader>
@@ -2526,7 +2863,7 @@ export default function AdvertiserDashboard() {
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold">Manajemen User</h2>
               <p className="text-xs text-muted-foreground">
-                Daftar user aplikasi. Role Promotor/Kreator/Admin STIFIn dapat dinonaktifkan, dan Promotor tertentu dapat dihapus.
+                Daftar user aplikasi. Role Promotor/Kreator/Admin STIFIn dapat dinonaktifkan, dan role tersebut dapat dihapus bila belum punya riwayat transaksi.
               </p>
               <div className="flex items-center gap-2 pt-1 flex-wrap">
                 <Badge variant="outline" className="border-emerald-200 text-emerald-700 bg-emerald-50">
@@ -3092,4 +3429,5 @@ export default function AdvertiserDashboard() {
     </div>
   )
 }
+
 
