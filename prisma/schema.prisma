@@ -12,19 +12,19 @@ model User {
   email     String   @unique
   name      String
   password  String
-  role      String   // PROMOTOR, KONTEN_KREATOR, ADVERTISER, STIFIN
+  role      String // PROMOTOR, KONTEN_KREATOR, ADVERTISER, STIFIN
   city      String?
   phone     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  adRequests    AdRequest[]
-  notifications Notification[]
-  contentAssignments AdRequest[] @relation("ContentCreatorAssignments")
+  adRequests           AdRequest[]
+  notifications        Notification[]
+  contentAssignments   AdRequest[]          @relation("ContentCreatorAssignments")
   creatorPayoutBatches CreatorPayoutBatch[]
   promotorBonusBatches PromotorBonusBatch[]
-  ownedProfileLinks UserProfileLink[] @relation("ProfileLinkOwner")
-  linkedAsProfile   UserProfileLink[] @relation("ProfileLinkProfile")
+  ownedProfileLinks    UserProfileLink[]    @relation("ProfileLinkOwner")
+  linkedAsProfile      UserProfileLink[]    @relation("ProfileLinkProfile")
 }
 
 model UserProfileLink {
@@ -40,44 +40,52 @@ model UserProfileLink {
 }
 
 model AdRequest {
-  id              String          @id @default(cuid())
-  campaignCode    String?         @unique
-  city            String
-  startDate       DateTime
-  testEndDate     DateTime?
-  durationDays    Int
-  dailyBudget     Int
-  totalBudget     Int
-  ppn             Int
-  totalPayment    Int
-  saldoApplied    Int             @default(0)
-  status          String          @default("MENUNGGU_PEMBAYARAN")
-  briefType       String?
-  briefContent    String?
-  briefVO         String?
-  briefJJ         String?
-  paymentProofUrl String?
-  contentUrl      String?
-  promotorNote    String?
-  adStartDate     DateTime?
-  adEndDate       DateTime?
-  promotorId      String
-  contentCreatorId String?
-  promotor        User            @relation(fields: [promotorId], references: [id], onDelete: Cascade)
-  contentCreator  User?           @relation("ContentCreatorAssignments", fields: [contentCreatorId], references: [id], onDelete: SetNull)
-  adReport        AdReport?
-  promotorResult  PromotorResult?
-  creatorPayoutItem CreatorPayoutItem?
+  id                 String              @id @default(cuid())
+  campaignCode       String?             @unique
+  city               String
+  startDate          DateTime
+  testEndDate        DateTime?
+  durationDays       Int
+  dailyBudget        Int
+  totalBudget        Int
+  ppn                Int
+  totalPayment       Int
+  saldoApplied       Int                 @default(0)
+  status             String              @default("MENUNGGU_PEMBAYARAN")
+  briefType          String?
+  briefContent       String?
+  briefVO            String?
+  briefJJ            String?
+  paymentProofUrl    String?
+  contentUrl         String?
+  promotorNote       String?
+  adStartDate        DateTime?
+  adEndDate          DateTime?
+  promotorId         String
+  contentCreatorId   String?
+  promotor           User                @relation(fields: [promotorId], references: [id], onDelete: Cascade)
+  contentCreator     User?               @relation("ContentCreatorAssignments", fields: [contentCreatorId], references: [id], onDelete: SetNull)
+  adReport           AdReport?
+  promotorResult     PromotorResult?
+  creatorPayoutItem  CreatorPayoutItem?
   promotorBonusItems PromotorBonusItem[]
-  metaCampaignId  String?
-  metaAdSetId     String?
-  metaAdIds       String?
-  metaDraftStatus String?         @default("NOT_CREATED") // NOT_CREATED, PENDING, SUCCESS, FAILED
-  metaDraftError  String?
+  metaCampaignId     String?
+  metaAdSetId        String?
+  metaAdIds          String?
+  metaDraftStatus    String?             @default("NOT_CREATED") // NOT_CREATED, PENDING, SUCCESS, FAILED
+  metaDraftError     String?
   metaDraftCreatedAt DateTime?
   metaDraftUpdatedAt DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([promotorId, createdAt])
+  @@index([promotorId, status, createdAt])
+  @@index([contentCreatorId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([city, createdAt])
+  @@index([adEndDate, status])
+  @@index([metaCampaignId])
 }
 
 model AdReport {
@@ -89,19 +97,23 @@ model AdReport {
   amountSpent Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([createdAt])
 }
 
 model PromotorResult {
-  id           String    @id @default(cuid())
-  adRequestId  String    @unique
-  adRequest    AdRequest @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
-  totalClients Int
+  id                   String             @id @default(cuid())
+  adRequestId          String             @unique
+  adRequest            AdRequest          @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
+  totalClients         Int
   previousTotalClients Int?
-  note         String?
-  status       String    @default("PENDING") // PENDING, VALID
-  bonusPayoutItem PromotorBonusItem?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  note                 String?
+  status               String             @default("PENDING") // PENDING, VALID
+  bonusPayoutItem      PromotorBonusItem?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([status, createdAt])
 }
 
 model Notification {
@@ -115,11 +127,13 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId, read, createdAt])
 }
 
 model BriefTemplate {
   id        String   @id @default(cuid())
-  type      String   // VO or JJ
+  type      String // VO or JJ
   name      String
   content   String
   createdAt DateTime @default(now())
@@ -143,57 +157,62 @@ model SystemSetting {
 }
 
 model CreatorPayoutBatch {
-  id           String   @id @default(cuid())
-  creatorId    String
-  creator      User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
-  payoutDate   DateTime @default(now())
-  totalRequests Int
-  totalContents Int
-  totalAmount  Int
+  id               String   @id @default(cuid())
+  creatorId        String
+  creator          User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  payoutDate       DateTime @default(now())
+  totalRequests    Int
+  totalContents    Int
+  totalAmount      Int
   transferProofUrl String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   items CreatorPayoutItem[]
 }
 
 model CreatorPayoutItem {
-  id           String   @id @default(cuid())
-  batchId      String
-  batch        CreatorPayoutBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  adRequestId  String   @unique
-  adRequest    AdRequest @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
+  id            String             @id @default(cuid())
+  batchId       String
+  batch         CreatorPayoutBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  adRequestId   String             @unique
+  adRequest     AdRequest          @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
   requestAmount Int
-  jjCount      Int      @default(3)
-  voCount      Int      @default(1)
-  contentCount Int      @default(4)
-  createdAt    DateTime @default(now())
+  jjCount       Int                @default(3)
+  voCount       Int                @default(1)
+  contentCount  Int                @default(4)
+  createdAt     DateTime           @default(now())
+
+  @@index([batchId, createdAt])
 }
 
 model PromotorBonusBatch {
-  id            String   @id @default(cuid())
-  promotorId    String
-  promotor      User     @relation(fields: [promotorId], references: [id], onDelete: Cascade)
-  payoutDate    DateTime @default(now())
-  totalItems    Int
-  totalClients  Int
-  totalAmount   Int
+  id               String   @id @default(cuid())
+  promotorId       String
+  promotor         User     @relation(fields: [promotorId], references: [id], onDelete: Cascade)
+  payoutDate       DateTime @default(now())
+  totalItems       Int
+  totalClients     Int
+  totalAmount      Int
   transferProofUrl String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   items PromotorBonusItem[]
 }
 
 model PromotorBonusItem {
-  id              String   @id @default(cuid())
-  batchId         String
-  batch           PromotorBonusBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  promotorResultId String  @unique
-  promotorResult  PromotorResult @relation(fields: [promotorResultId], references: [id], onDelete: Cascade)
-  adRequestId     String
-  adRequest       AdRequest @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
-  clientCount     Int
-  bonusAmount     Int
-  createdAt       DateTime @default(now())
+  id               String             @id @default(cuid())
+  batchId          String
+  batch            PromotorBonusBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  promotorResultId String             @unique
+  promotorResult   PromotorResult     @relation(fields: [promotorResultId], references: [id], onDelete: Cascade)
+  adRequestId      String
+  adRequest        AdRequest          @relation(fields: [adRequestId], references: [id], onDelete: Cascade)
+  clientCount      Int
+  bonusAmount      Int
+  createdAt        DateTime           @default(now())
+
+  @@index([batchId, createdAt])
+  @@index([adRequestId])
 }

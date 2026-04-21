@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -562,13 +563,32 @@ const getRoleBadgeClass = (role: string) => {
   return "bg-slate-100 text-slate-700 border-slate-200"
 }
 
+const ADVERTISER_TAB_TO_ROUTE: Record<string, string> = {
+  overview: "overview",
+  master: "master-brief",
+  meta_ads: "meta-ads",
+  whatsapp: "notifikasi-wa",
+  alerts: "alert-center",
+  payouts: "pencairan-kreator",
+  bonus_payouts: "bonus-advertiser",
+  promotors: "promotor",
+  users: "user",
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function AdvertiserDashboard() {
+export default function AdvertiserDashboard({
+  initialTab = "overview",
+  routeBasePath,
+}: {
+  initialTab?: string
+  routeBasePath?: string
+}) {
+  const router = useRouter()
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("overview")
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [statusTab, setStatusTab] = useState("all")
   const [overviewSearch, setOverviewSearch] = useState("")
   const [debouncedOverviewSearch, setDebouncedOverviewSearch] = useState("")
@@ -678,6 +698,11 @@ export default function AdvertiserDashboard() {
   const [metaDraftMode, setMetaDraftMode] = useState<MetaDraftMode>("GENERATE")
   const restoreConfigInputRef = useRef<HTMLInputElement | null>(null)
   const loadedTabsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    if (!initialTab) return
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   useEffect(() => {
     try {
@@ -901,6 +926,8 @@ export default function AdvertiserDashboard() {
     try {
       if (append) setLoadingMoreOverview(true)
       const query = new URLSearchParams()
+      query.set("lite", "1")
+      query.set("view", `advertiser:${activeTab}`)
       let url = "/api/ad-requests"
       if (shouldUseOverviewPaging) {
         query.set("page", String(page))
@@ -913,6 +940,8 @@ export default function AdvertiserDashboard() {
         if (statusTab !== "all" && statusTab !== "MENUNGGU_PEMBAYARAN") {
           query.set("status", statusTab)
         }
+        url = `/api/ad-requests?${query.toString()}`
+      } else {
         url = `/api/ad-requests?${query.toString()}`
       }
 
@@ -1060,14 +1089,25 @@ export default function AdvertiserDashboard() {
   useEffect(() => {
     if (!user) return
     loadedTabsRef.current.clear()
-    setActiveTab("overview")
+    setActiveTab(initialTab || "overview")
     setStatusTab("all")
     setOverviewSearch("")
     setDebouncedOverviewSearch("")
-    // Load awal dibuat ringan: tanpa auto-sync dan pakai pagination backend.
-    fetchAdRequests(false, { page: 1, append: false })
+    setHasLoadedFullAdRequests(false)
+    // Load awal route-aware: hanya fetch data yang diperlukan oleh halaman aktif.
+    if ((initialTab || "overview") === "overview") {
+      fetchAdRequests(false, { page: 1, append: false })
+    } else if ((initialTab || "overview") === "promotors") {
+      fetchAdRequests(false, { forceFull: true })
+    } else {
+      setAdRequests([])
+      setServerStatusCounts(null)
+      setOverviewPage(1)
+      setOverviewHasMore(false)
+      setLoading(false)
+    }
     fetchMetaSyncStatus()
-  }, [user])
+  }, [user, initialTab])
 
   useEffect(() => {
     if (!user || !activeTab) return
@@ -1105,7 +1145,7 @@ export default function AdvertiserDashboard() {
       return
     }
 
-    if (activeTab !== "overview" && !hasLoadedFullAdRequests) {
+    if (activeTab === "promotors" && !hasLoadedFullAdRequests) {
       fetchAdRequests(false, { forceFull: true })
     }
   }, [
@@ -1137,6 +1177,20 @@ export default function AdvertiserDashboard() {
       setAdEndDate(formatToDateTimeLocal(end))
     }
   }, [selectedAd, scheduleMode])
+
+  const refreshAdRequestsForActiveTab = useCallback(async () => {
+    if (activeTab === "overview") {
+      await fetchAdRequests(false, { page: 1, append: false })
+      return
+    }
+    if (activeTab === "promotors") {
+      await fetchAdRequests(false, { forceFull: true })
+      return
+    }
+    if (hasLoadedFullAdRequests) {
+      await fetchAdRequests(false, { forceFull: true })
+    }
+  }, [activeTab, hasLoadedFullAdRequests, fetchAdRequests])
 
   const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1215,7 +1269,7 @@ export default function AdvertiserDashboard() {
       if (!res.ok) throw new Error("Gagal")
       toast.success("Iklan berhasil dijadwalkan!")
       setScheduleDialogOpen(false)
-      fetchAdRequests()
+      await refreshAdRequestsForActiveTab()
     } catch { toast.error("Gagal menjadwalkan iklan") }
     finally { setIsSubmitting(false) }
   }
@@ -1237,7 +1291,7 @@ export default function AdvertiserDashboard() {
       if (!res.ok) throw new Error("Gagal")
       toast.success("Laporan berhasil diunggah!")
       setReportDialogOpen(false)
-      fetchAdRequests()
+      await refreshAdRequestsForActiveTab()
     } catch { toast.error("Gagal mengunggah laporan") }
     finally { setIsSubmitting(false) }
   }
@@ -1251,7 +1305,7 @@ export default function AdvertiserDashboard() {
       })
       if (!res.ok) throw new Error("Gagal")
       toast.success("Pembayaran berhasil dikonfirmasi!")
-      fetchAdRequests()
+      await refreshAdRequestsForActiveTab()
     } catch { toast.error("Gagal mengonfirmasi pembayaran") }
     finally { setIsSubmitting(false) }
   }
@@ -1651,7 +1705,7 @@ export default function AdvertiserDashboard() {
       } else {
         toast.success(data.message || "Draft Meta berhasil digenerate ulang")
       }
-      fetchAdRequests()
+      await refreshAdRequestsForActiveTab()
     } catch (error: any) {
       toast.error(error?.message || "Gagal generate ulang draft Meta")
     } finally {
@@ -1723,7 +1777,7 @@ export default function AdvertiserDashboard() {
         syncResult: data.syncResult,
       })
       toast.success(`Import selesai: ${data.createdCount || 0} dibuat, ${data.skippedCount || 0} dilewati`)
-      await fetchAdRequests(false)
+      await refreshAdRequestsForActiveTab()
     } catch (error: any) {
       toast.error(error?.message || "Gagal eksekusi import campaign historis")
     } finally {
@@ -1772,24 +1826,45 @@ export default function AdvertiserDashboard() {
     }
   }
 
-  const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
-  const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
-  const statusCounts = serverStatusCounts || {
-    all: adRequests.length,
-    MENUNGGU_PEMBAYARAN: adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status)).length,
-    MENUNGGU_KONTEN: adRequests.filter((r) => r.status === "MENUNGGU_KONTEN").length,
-    KONTEN_SELESAI: adRequests.filter((r) => r.status === "KONTEN_SELESAI").length,
-    IKLAN_DIJADWALKAN: adRequests.filter((r) => r.status === "IKLAN_DIJADWALKAN").length,
-    IKLAN_BERJALAN: adRequests.filter((r) => r.status === "IKLAN_BERJALAN").length,
-    SELESAI: adRequests.filter((r) => r.status === "SELESAI").length,
-    FINAL: adRequests.filter((r) => r.status === "FINAL").length,
-  }
+  const totalSpentAmount = useMemo(
+    () => adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0),
+    [adRequests]
+  )
+  const totalLeadsCount = useMemo(
+    () => adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0),
+    [adRequests]
+  )
 
-  const filteredRequests = statusTab === "all"
-    ? adRequests
-    : statusTab === "MENUNGGU_PEMBAYARAN"
-      ? adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status))
-      : adRequests.filter(r => r.status === statusTab)
+  const computedStatusCounts = useMemo(() => {
+    const counts = {
+      all: adRequests.length,
+      MENUNGGU_PEMBAYARAN: 0,
+      MENUNGGU_KONTEN: 0,
+      KONTEN_SELESAI: 0,
+      IKLAN_DIJADWALKAN: 0,
+      IKLAN_BERJALAN: 0,
+      SELESAI: 0,
+      FINAL: 0,
+    }
+    for (const req of adRequests) {
+      if (["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(req.status)) {
+        counts.MENUNGGU_PEMBAYARAN += 1
+      } else if (req.status in counts) {
+        ;(counts as any)[req.status] += 1
+      }
+    }
+    return counts
+  }, [adRequests])
+
+  const statusCounts = serverStatusCounts || computedStatusCounts
+
+  const filteredRequests = useMemo(() => {
+    if (statusTab === "all") return adRequests
+    if (statusTab === "MENUNGGU_PEMBAYARAN") {
+      return adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status))
+    }
+    return adRequests.filter((r) => r.status === statusTab)
+  }, [adRequests, statusTab])
 
   if (loading) return <div className="p-8"><Skeleton className="h-40 w-full" /></div>
 
@@ -1838,7 +1913,17 @@ export default function AdvertiserDashboard() {
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(nextTab) => {
+          setActiveTab(nextTab)
+          if (routeBasePath) {
+            const routeSegment = ADVERTISER_TAB_TO_ROUTE[nextTab] || ADVERTISER_TAB_TO_ROUTE.overview
+            router.push(`${routeBasePath}/${routeSegment}`)
+          }
+        }}
+        className="w-full space-y-4"
+      >
         <TabsList className="w-full bg-slate-100/50 p-1 border h-auto flex flex-wrap justify-start gap-1">
           <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -253,12 +254,26 @@ const RankCard = ({ rank, name, value, label, color }: { rank: number; name: str
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function PromotorDashboard() {
+const PROMOTOR_TAB_TO_ROUTE: Record<string, string> = {
+  pengajuan: "pengajuan-iklan",
+  riwayat: "riwayat-iklan",
+  "data-iklan": "data-iklan-global",
+  "top-promotor": "top-promotor",
+}
+
+export default function PromotorDashboard({
+  initialTab = "pengajuan",
+  routeBasePath,
+}: {
+  initialTab?: string
+  routeBasePath?: string
+}) {
+  const router = useRouter()
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [globalAds, setGlobalAds] = useState<AdRequest[]>([])
   const [allGlobalAds, setAllGlobalAds] = useState<AdRequest[]>([])
-  const [mainTab, setMainTab] = useState("pengajuan")
+  const [mainTab, setMainTab] = useState(initialTab)
   const [pengajuanTab, setPengajuanTab] = useState<"PAY" | "WAIT_CONTENT" | "PROCESS_CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL">("PAY")
   const [syncingGlobalAds, setSyncingGlobalAds] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -308,6 +323,7 @@ export default function PromotorDashboard() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [waLink, setWaLink] = useState("")
   const activeSyncBusyRef = useRef(false)
+  const loadedMainTabsRef = useRef(new Set<string>())
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -382,11 +398,43 @@ export default function PromotorDashboard() {
     return Object.values(stats)
   }, [globalAds, allGlobalAds])
 
+  const adStatusBuckets = useMemo(() => {
+    const buckets = {
+      PAY: [] as AdRequest[],
+      WAIT_CONTENT: [] as AdRequest[],
+      PROCESS_CONTENT: [] as AdRequest[],
+      SCHEDULED: [] as AdRequest[],
+      ACTIVE: [] as AdRequest[],
+      DONE: [] as AdRequest[],
+      FINAL: [] as AdRequest[],
+    }
+
+    for (const ad of adRequests) {
+      if (["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status)) {
+        buckets.PAY.push(ad)
+      } else if (ad.status === "MENUNGGU_KONTEN") {
+        buckets.WAIT_CONTENT.push(ad)
+      } else if (["DIPROSES", "KONTEN_SELESAI"].includes(ad.status)) {
+        buckets.PROCESS_CONTENT.push(ad)
+      } else if (ad.status === "IKLAN_DIJADWALKAN") {
+        buckets.SCHEDULED.push(ad)
+      } else if (ad.status === "IKLAN_BERJALAN") {
+        buckets.ACTIVE.push(ad)
+      } else if (ad.status === "SELESAI") {
+        buckets.DONE.push(ad)
+      } else if (ad.status === "FINAL") {
+        buckets.FINAL.push(ad)
+      }
+    }
+
+    return buckets
+  }, [adRequests])
+
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
   const fetchAdRequests = useCallback(async () => {
     try {
-      const res = await fetch("/api/ad-requests")
+      const res = await fetch("/api/ad-requests?lite=1&view=promotor:main")
       if (!res.ok) {
         throw new Error("Gagal mengambil data")
       }
@@ -442,7 +490,7 @@ export default function PromotorDashboard() {
       await syncGlobalAdsFromMeta()
     }
     try {
-      const res = await fetch("/api/ad-requests?scope=all")
+      const res = await fetch("/api/ad-requests?scope=all&lite=1&view=promotor:global")
       if (!res.ok) {
         setGlobalAds([])
         setAllGlobalAds([])
@@ -498,13 +546,26 @@ export default function PromotorDashboard() {
   }, [])
 
   useEffect(() => {
+    if (!initialTab) return
+    setMainTab(initialTab)
+  }, [initialTab])
+
+  useEffect(() => {
     if (user) {
       fetchAdRequests()
-      fetchGlobalAds(false)
       fetchWaLink()
       fetchMetaSyncStatus()
     }
-  }, [user, fetchAdRequests, fetchGlobalAds, fetchWaLink, fetchMetaSyncStatus])
+  }, [user, fetchAdRequests, fetchWaLink, fetchMetaSyncStatus])
+
+  useEffect(() => {
+    if (!user || !mainTab) return
+    if (loadedMainTabsRef.current.has(mainTab)) return
+    loadedMainTabsRef.current.add(mainTab)
+    if (mainTab === "data-iklan" || mainTab === "top-promotor") {
+      fetchGlobalAds(false)
+    }
+  }, [user, mainTab, fetchGlobalAds])
 
   useEffect(() => {
     if (!user) return
@@ -519,16 +580,7 @@ export default function PromotorDashboard() {
   }, [user, mainTab, pengajuanTab, syncActiveAdsFromMeta])
 
   const renderAdCards = (tabType: "PAY" | "WAIT_CONTENT" | "PROCESS_CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL") => {
-    const filtered = adRequests.filter((ad) => {
-      if (tabType === "PAY") return ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status)
-      if (tabType === "WAIT_CONTENT") return ad.status === "MENUNGGU_KONTEN"
-      if (tabType === "PROCESS_CONTENT") return ["DIPROSES", "KONTEN_SELESAI"].includes(ad.status)
-      if (tabType === "SCHEDULED") return ad.status === "IKLAN_DIJADWALKAN"
-      if (tabType === "ACTIVE") return ad.status === "IKLAN_BERJALAN"
-      if (tabType === "DONE") return ad.status === "SELESAI"
-      if (tabType === "FINAL") return ad.status === "FINAL"
-      return true
-    })
+    const filtered = adStatusBuckets[tabType]
 
     const isFinalTab = tabType === "FINAL"
     const finalTotalItems = filtered.length
@@ -995,22 +1047,25 @@ export default function PromotorDashboard() {
   // ── Computed stats ─────────────────────────────────────────────────────────
 
   const totalPengajuan = adRequests.length
-  const iklanBerjalan = adRequests.filter(
-    (r) => r.status === "IKLAN_BERJALAN"
-  ).length
-  const totalKlien = adRequests.reduce((sum, r) => {
-    if (r.promotorResult) {
-      return sum + r.promotorResult.totalClients
-    }
-    return sum
-  }, 0)
-  const totalLeftoverSaldo = adRequests.reduce((sum, r) => {
-    if (!["SELESAI", "FINAL"].includes(r.status)) return sum
-    if (!r.adReport || r.adReport.amountSpent === null || r.adReport.amountSpent === undefined) return sum
-    const sisa = Math.max(r.totalBudget - r.adReport.amountSpent, 0)
-    return sum + sisa
-  }, 0)
-  const totalSaldoUsed = adRequests.reduce((sum, r) => sum + (r.saldoApplied || 0), 0)
+  const iklanBerjalan = adStatusBuckets.ACTIVE.length
+  const totalKlien = useMemo(
+    () => adRequests.reduce((sum, r) => sum + (r.promotorResult?.totalClients || 0), 0),
+    [adRequests]
+  )
+  const totalLeftoverSaldo = useMemo(
+    () =>
+      adRequests.reduce((sum, r) => {
+        if (!["SELESAI", "FINAL"].includes(r.status)) return sum
+        if (!r.adReport || r.adReport.amountSpent === null || r.adReport.amountSpent === undefined) return sum
+        const sisa = Math.max(r.totalBudget - r.adReport.amountSpent, 0)
+        return sum + sisa
+      }, 0),
+    [adRequests]
+  )
+  const totalSaldoUsed = useMemo(
+    () => adRequests.reduce((sum, r) => sum + (r.saldoApplied || 0), 0),
+    [adRequests]
+  )
   const totalSaldoTersedia = Math.max(totalLeftoverSaldo - totalSaldoUsed, 0)
   const saldoSiapPakai = totalSaldoTersedia >= MIN_AUTO_SALDO_APPLY ? totalSaldoTersedia : 0
 
@@ -1247,17 +1302,97 @@ export default function PromotorDashboard() {
 
   // ── Filtered history ──────────────────────────────────────────────────────
 
-  const filteredHistory = adRequests.filter((r) =>
-    r.city.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredHistory = useMemo(
+    () => adRequests.filter((r) => r.city.toLowerCase().includes(searchQuery.toLowerCase())),
+    [adRequests, searchQuery]
   )
   const historyTotalItems = filteredHistory.length
   const historyTotalPages = Math.max(1, Math.ceil(historyTotalItems / HISTORY_PAGE_SIZE))
   const historyCurrentPage = Math.min(historyPage, historyTotalPages)
   const historyStartIdx = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE
   const historyEndIdxExclusive = historyStartIdx + HISTORY_PAGE_SIZE
-  const paginatedHistory = filteredHistory.slice(historyStartIdx, historyEndIdxExclusive)
+  const paginatedHistory = useMemo(
+    () => filteredHistory.slice(historyStartIdx, historyEndIdxExclusive),
+    [filteredHistory, historyStartIdx, historyEndIdxExclusive]
+  )
   const historyFirstItemNumber = historyTotalItems === 0 ? 0 : historyStartIdx + 1
   const historyLastItemNumber = Math.min(historyEndIdxExclusive, historyTotalItems)
+
+  const globalAdsDisplay = useMemo(() => {
+    const search = globalSearch.toLowerCase().trim()
+    const getTestReferenceDate = (ad: AdRequest) => new Date(ad.testEndDate || ad.startDate)
+    const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const today = toStartOfDay(new Date())
+
+    const baseFiltered = globalAds.filter((ad) => {
+      if (!search) return true
+      return ad.city.toLowerCase().includes(search) || ad.promotor.name.toLowerCase().includes(search)
+    })
+
+    const filtered = baseFiltered
+      .filter((ad) => {
+        const lastTargetDate = toStartOfDay(getTestReferenceDate(ad))
+        const diffDays = Math.floor((today.getTime() - lastTargetDate.getTime()) / (1000 * 60 * 60 * 24))
+        if (!Number.isFinite(diffDays)) return false
+        if (globalTargetFilter === "ALL") return true
+        if (globalTargetFilter === "15_30") return diffDays >= 15 && diffDays <= 30
+        return diffDays > 30
+      })
+      .sort((a, b) => {
+        if (!globalSortKey) {
+          return getTestReferenceDate(b).getTime() - getTestReferenceDate(a).getTime()
+        }
+
+        const leadsA = a.adReport?.totalLeads || 0
+        const leadsB = b.adReport?.totalLeads || 0
+        const klienA = a.promotorResult?.totalClients || 0
+        const klienB = b.promotorResult?.totalClients || 0
+        const cprA = a.adReport?.cpr || 0
+        const cprB = b.adReport?.cpr || 0
+
+        let diff = 0
+        if (globalSortKey === "LEADS") diff = leadsA - leadsB
+        if (globalSortKey === "KLIEN") diff = klienA - klienB
+        if (globalSortKey === "CPR") diff = cprA - cprB
+
+        if (diff === 0) {
+          return getTestReferenceDate(b).getTime() - getTestReferenceDate(a).getTime()
+        }
+        return globalSortOrder === "asc" ? diff : -diff
+      })
+
+    const totalItems = filtered.length
+    const totalPages = Math.max(1, Math.ceil(totalItems / GLOBAL_ADS_PAGE_SIZE))
+    const currentPage = Math.min(globalPage, totalPages)
+    const startIdx = (currentPage - 1) * GLOBAL_ADS_PAGE_SIZE
+    const endIdxExclusive = startIdx + GLOBAL_ADS_PAGE_SIZE
+    const paginated = filtered.slice(startIdx, endIdxExclusive)
+    const firstItemNumber = totalItems === 0 ? 0 : startIdx + 1
+    const lastItemNumber = Math.min(endIdxExclusive, totalItems)
+
+    return {
+      filtered,
+      paginated,
+      totalItems,
+      totalPages,
+      currentPage,
+      firstItemNumber,
+      lastItemNumber,
+    }
+  }, [globalAds, globalSearch, globalTargetFilter, globalSortKey, globalSortOrder, globalPage])
+
+  const topPromotorByClients = useMemo(
+    () => [...topPromotorStats].sort((a, b) => b.totalClients - a.totalClients),
+    [topPromotorStats]
+  )
+  const topPromotorBySpent = useMemo(
+    () => [...topPromotorStats].sort((a, b) => b.totalSpent - a.totalSpent),
+    [topPromotorStats]
+  )
+  const topPromotorByAds = useMemo(
+    () => [...topPromotorStats].sort((a, b) => b.totalAds - a.totalAds),
+    [topPromotorStats]
+  )
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
@@ -1355,7 +1490,17 @@ export default function PromotorDashboard() {
       </div>
 
       {/* ── Main Tabs ───────────────────────────────────────────────────── */}
-      <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
+      <Tabs
+        value={mainTab}
+        onValueChange={(nextTab) => {
+          setMainTab(nextTab)
+          if (routeBasePath) {
+            const routeSegment = PROMOTOR_TAB_TO_ROUTE[nextTab] || PROMOTOR_TAB_TO_ROUTE.pengajuan
+            router.push(`${routeBasePath}/${routeSegment}`)
+          }
+        }}
+        className="w-full"
+      >
         <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="pengajuan">📝 Pengajuan Iklan</TabsTrigger>
           <TabsTrigger value="riwayat">🗂️ Riwayat Iklan</TabsTrigger>
@@ -1539,57 +1684,57 @@ export default function PromotorDashboard() {
             <TabsList className="bg-slate-100/50 p-0.5 border h-auto flex flex-wrap justify-start gap-1 rounded-lg">
               <TabsTrigger value="PAY" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Pembayaran
-                {adRequests.filter(r => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status)).length > 0 && (
+                {adStatusBuckets.PAY.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-amber-100 text-amber-700 border-amber-200">
-                    {adRequests.filter(r => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status)).length}
+                    {adStatusBuckets.PAY.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="WAIT_CONTENT" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Menunggu Konten
-                {adRequests.filter(r => r.status === "MENUNGGU_KONTEN").length > 0 && (
+                {adStatusBuckets.WAIT_CONTENT.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
-                    {adRequests.filter(r => r.status === "MENUNGGU_KONTEN").length}
+                    {adStatusBuckets.WAIT_CONTENT.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="PROCESS_CONTENT" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Konten Diproses
-                {adRequests.filter(r => ["DIPROSES", "KONTEN_SELESAI"].includes(r.status)).length > 0 && (
+                {adStatusBuckets.PROCESS_CONTENT.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
-                    {adRequests.filter(r => ["DIPROSES", "KONTEN_SELESAI"].includes(r.status)).length}
+                    {adStatusBuckets.PROCESS_CONTENT.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="SCHEDULED" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Iklan Dijadwalkan
-                {adRequests.filter(r => r.status === "IKLAN_DIJADWALKAN").length > 0 && (
+                {adStatusBuckets.SCHEDULED.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-blue-100 text-blue-700 border-blue-200">
-                    {adRequests.filter(r => r.status === "IKLAN_DIJADWALKAN").length}
+                    {adStatusBuckets.SCHEDULED.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="ACTIVE" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Iklan Aktif
-                {adRequests.filter(r => r.status === "IKLAN_BERJALAN").length > 0 && (
+                {adStatusBuckets.ACTIVE.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-purple-100 text-purple-700 border-purple-200">
-                    {adRequests.filter(r => r.status === "IKLAN_BERJALAN").length}
+                    {adStatusBuckets.ACTIVE.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="DONE" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Iklan Selesai
-                {adRequests.filter(r => r.status === "SELESAI").length > 0 && (
+                {adStatusBuckets.DONE.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-slate-100 text-slate-700 border-slate-200">
-                    {adRequests.filter(r => r.status === "SELESAI").length}
+                    {adStatusBuckets.DONE.length}
                   </Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="FINAL" className="text-xs h-8 px-3 font-semibold data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md gap-2">
                 Final
-                {adRequests.filter(r => r.status === "FINAL").length > 0 && (
+                {adStatusBuckets.FINAL.length > 0 && (
                   <Badge variant="outline" className="h-4 px-1 text-[9px] bg-slate-900 text-white border-slate-900">
-                    {adRequests.filter(r => r.status === "FINAL").length}
+                    {adStatusBuckets.FINAL.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -1862,61 +2007,15 @@ export default function PromotorDashboard() {
                   )}
                 </button>
               )
-
-              const baseFiltered = globalAds.filter(ad =>
-                ad.city.toLowerCase().includes(globalSearch.toLowerCase()) ||
-                ad.promotor.name.toLowerCase().includes(globalSearch.toLowerCase())
-              );
-
-              const getTestReferenceDate = (ad: AdRequest) => new Date(ad.testEndDate || ad.startDate)
-              const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
-              const now = new Date()
-              const today = toStartOfDay(now)
-              const filtered = baseFiltered
-                .filter((ad) => {
-                  const lastTargetDate = toStartOfDay(getTestReferenceDate(ad))
-                  const diffDays = Math.floor((today.getTime() - lastTargetDate.getTime()) / (1000 * 60 * 60 * 24))
-                  if (!Number.isFinite(diffDays)) return false
-
-                  if (globalTargetFilter === "ALL") {
-                    return true
-                  }
-                  if (globalTargetFilter === "15_30") {
-                    return diffDays >= 15 && diffDays <= 30
-                  }
-                  return diffDays > 30
-                })
-                .sort((a, b) => {
-                  if (!globalSortKey) {
-                    return getTestReferenceDate(b).getTime() - getTestReferenceDate(a).getTime()
-                  }
-
-                  const leadsA = a.adReport?.totalLeads || 0
-                  const leadsB = b.adReport?.totalLeads || 0
-                  const klienA = a.promotorResult?.totalClients || 0
-                  const klienB = b.promotorResult?.totalClients || 0
-                  const cprA = a.adReport?.cpr || 0
-                  const cprB = b.adReport?.cpr || 0
-
-                  let diff = 0
-                  if (globalSortKey === "LEADS") diff = leadsA - leadsB
-                  if (globalSortKey === "KLIEN") diff = klienA - klienB
-                  if (globalSortKey === "CPR") diff = cprA - cprB
-
-                  if (diff === 0) {
-                    return getTestReferenceDate(b).getTime() - getTestReferenceDate(a).getTime()
-                  }
-                  return globalSortOrder === "asc" ? diff : -diff
-                })
-
-              const totalItems = filtered.length
-              const totalPages = Math.max(1, Math.ceil(totalItems / GLOBAL_ADS_PAGE_SIZE))
-              const currentPage = Math.min(globalPage, totalPages)
-              const startIdx = (currentPage - 1) * GLOBAL_ADS_PAGE_SIZE
-              const endIdxExclusive = startIdx + GLOBAL_ADS_PAGE_SIZE
-              const paginated = filtered.slice(startIdx, endIdxExclusive)
-              const firstItemNumber = totalItems === 0 ? 0 : startIdx + 1
-              const lastItemNumber = Math.min(endIdxExclusive, totalItems)
+              const {
+                filtered,
+                paginated,
+                totalItems,
+                totalPages,
+                currentPage,
+                firstItemNumber,
+                lastItemNumber,
+              } = globalAdsDisplay
 
               if (filtered.length === 0) {
                 return (
@@ -2082,7 +2181,7 @@ export default function PromotorDashboard() {
               {topPromotorStats.length === 0 ? (
                 <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
               ) : (
-                [...topPromotorStats].sort((a, b) => b.totalClients - a.totalClients).map((p, i) => (
+                topPromotorByClients.map((p, i) => (
                   <RankCard key={p.id} rank={i + 1} name={p.name} value={`${p.totalClients} Orang`} label="Total Klien" color="text-purple-600" />
                 ))
               )}
@@ -2093,7 +2192,7 @@ export default function PromotorDashboard() {
               {topPromotorStats.length === 0 ? (
                 <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
               ) : (
-                [...topPromotorStats].sort((a, b) => b.totalSpent - a.totalSpent).map((p, i) => (
+                topPromotorBySpent.map((p, i) => (
                   <RankCard key={p.id} rank={i + 1} name={p.name} value={formatRupiah(p.totalSpent)} label="Total Ads Spent" color="text-emerald-600" />
                 ))
               )}
@@ -2104,7 +2203,7 @@ export default function PromotorDashboard() {
               {topPromotorStats.length === 0 ? (
                 <Card className="p-10 text-center text-muted-foreground italic border-dashed"><p>Belum ada data</p></Card>
               ) : (
-                [...topPromotorStats].sort((a, b) => b.totalAds - a.totalAds).map((p, i) => (
+                topPromotorByAds.map((p, i) => (
                   <RankCard key={p.id} rank={i + 1} name={p.name} value={`${p.totalAds} Iklan`} label="Total Pengajuan" color="text-blue-600" />
                 ))
               )}

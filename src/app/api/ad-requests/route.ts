@@ -10,6 +10,7 @@ import { buildCampaignCode, buildCampaignName } from "@/lib/campaign-naming"
 const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
 const MIN_AUTO_SALDO_APPLY = 100_000
 const AD_REQUESTS_CACHE_TTL_MS = 20_000
+const MAINTENANCE_THROTTLE_MS = 60_000
 
 type AdRequestsCacheEntry = {
   expiresAt: number
@@ -17,6 +18,8 @@ type AdRequestsCacheEntry = {
 }
 
 const adRequestsCache = new Map<string, AdRequestsCacheEntry>()
+let lastUnassignedRepairAt = 0
+let lastScheduledSyncAt = 0
 
 function clearAdRequestsCache() {
   adRequestsCache.clear()
@@ -37,6 +40,79 @@ function writeAdRequestsCache(key: string, payload: unknown) {
     expiresAt: Date.now() + AD_REQUESTS_CACHE_TTL_MS,
     payload,
   })
+}
+
+async function runUnassignedQueueRepair() {
+  const unassignedContentQueue = await db.adRequest.findMany({
+    where: {
+      status: "MENUNGGU_KONTEN",
+      contentCreatorId: null,
+    },
+    include: {
+      promotor: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "asc" },
+    take: 50,
+  })
+
+  if (unassignedContentQueue.length === 0) return
+
+  for (const legacyAd of unassignedContentQueue) {
+    try {
+      const assigned = await db.$transaction(async (tx) => {
+        const creators = await tx.user.findMany({
+          where: { role: "KONTEN_KREATOR" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+        if (creators.length === 0) return null
+
+        const enabledSetting = await tx.systemSetting.findUnique({
+          where: { key: USER_ENABLED_SETTING_KEY },
+        })
+        const enabledMap = parseUserEnabledMap(enabledSetting?.value)
+        const availableCreators = creators.filter((creator) => isUserEnabled(enabledMap, creator.id))
+        if (availableCreators.length === 0) return null
+
+        const rotation = await tx.systemSetting.findUnique({
+          where: { key: CREATOR_ROTATION_KEY },
+        })
+        const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
+        const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
+        const nextIndex = (lastIndex + 1) % availableCreators.length
+        const assignedCreator = availableCreators[nextIndex]
+
+        const updated = await tx.adRequest.updateMany({
+          where: { id: legacyAd.id, contentCreatorId: null },
+          data: { contentCreatorId: assignedCreator.id },
+        })
+
+        if (updated.count === 0) return null
+
+        await tx.systemSetting.upsert({
+          where: { key: CREATOR_ROTATION_KEY },
+          update: { value: String(nextIndex) },
+          create: {
+            key: CREATOR_ROTATION_KEY,
+            value: String(nextIndex),
+          },
+        })
+
+        return assignedCreator
+      })
+
+      if (assigned) {
+        await createNotification(
+          assigned.id,
+          "Pengajuan Iklan Baru",
+          `${legacyAd.promotor.name} dari ${legacyAd.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
+          "AD_REQUEST",
+          legacyAd.id
+        )
+      }
+    } catch (repairError) {
+      console.error("Auto-repair assignment warning:", repairError)
+    }
+  }
 }
 
 async function generateUniqueCampaignCode(): Promise<string> {
@@ -63,12 +139,20 @@ export async function GET(req: Request) {
     const city = searchParams.get("city")
     const queryText = (searchParams.get("q") || "").trim()
     const status = searchParams.get("status")
+    const statusesParam = (searchParams.get("statuses") || "").trim()
+    const statusList = statusesParam
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+    const view = (searchParams.get("view") || "").trim()
+    const isLite = searchParams.get("lite") === "1"
     const scope = searchParams.get("scope") // "all" for global historical data
     const pageParam = searchParams.get("page")
     const pageSizeParam = searchParams.get("pageSize")
     const sortByParam = (searchParams.get("sortBy") || "createdAt").trim()
     const sortOrderParam = (searchParams.get("sortOrder") || "desc").trim().toLowerCase()
     const isAdmin = session.role === "ADVERTISER" || session.role === "STIFIN"
+    const forceMaintenance = searchParams.get("maintenance") === "1"
     const isPromotorGlobalScope = scope === "all" && session.role === "PROMOTOR"
 
     if (scope === "all" && !isAdmin && !isPromotorGlobalScope) {
@@ -97,88 +181,10 @@ export async function GET(req: Request) {
       ]
     }
 
-    if (status) {
+    if (statusList.length > 0) {
+      where.status = { in: statusList }
+    } else if (status) {
       where.status = status
-    }
-
-    // Auto-repair legacy data: MENUNGGU_KONTEN without assigned creator
-    // (historically created by old upload-proof flow).
-    const unassignedContentQueue = await db.adRequest.findMany({
-      where: {
-        status: "MENUNGGU_KONTEN",
-        contentCreatorId: null,
-      },
-      include: {
-        promotor: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: "asc" },
-      take: 50,
-    })
-
-    if (unassignedContentQueue.length > 0) {
-      for (const legacyAd of unassignedContentQueue) {
-        try {
-          const assigned = await db.$transaction(async (tx) => {
-            const creators = await tx.user.findMany({
-              where: { role: "KONTEN_KREATOR" },
-              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-            })
-            if (creators.length === 0) return null
-
-            const enabledSetting = await tx.systemSetting.findUnique({
-              where: { key: USER_ENABLED_SETTING_KEY },
-            })
-            const enabledMap = parseUserEnabledMap(enabledSetting?.value)
-            const availableCreators = creators.filter((creator) => isUserEnabled(enabledMap, creator.id))
-            if (availableCreators.length === 0) return null
-
-            const rotation = await tx.systemSetting.findUnique({
-              where: { key: CREATOR_ROTATION_KEY },
-            })
-            const lastIndexRaw = Number.parseInt(rotation?.value || "-1", 10)
-            const lastIndex = Number.isNaN(lastIndexRaw) ? -1 : lastIndexRaw
-            const nextIndex = (lastIndex + 1) % availableCreators.length
-            const assignedCreator = availableCreators[nextIndex]
-
-            const updated = await tx.adRequest.updateMany({
-              where: { id: legacyAd.id, contentCreatorId: null },
-              data: { contentCreatorId: assignedCreator.id },
-            })
-
-            if (updated.count === 0) return null
-
-            await tx.systemSetting.upsert({
-              where: { key: CREATOR_ROTATION_KEY },
-              update: { value: String(nextIndex) },
-              create: {
-                key: CREATOR_ROTATION_KEY,
-                value: String(nextIndex),
-              },
-            })
-
-            return assignedCreator
-          })
-
-          if (assigned) {
-            await createNotification(
-              assigned.id,
-              "Pengajuan Iklan Baru",
-              `${legacyAd.promotor.name} dari ${legacyAd.city} mengajukan iklan baru. Ditugaskan untuk Anda.`,
-              "AD_REQUEST",
-              legacyAd.id
-            )
-          }
-        } catch (repairError) {
-          console.error("Auto-repair assignment warning:", repairError)
-        }
-      }
-    }
-
-    // Keep running-state synchronized even when background scheduler is not available.
-    try {
-      await syncScheduledAdsToRunning()
-    } catch (syncError) {
-      console.error("Sync scheduled ads warning:", syncError)
     }
 
     const usePagination = pageParam !== null || pageSizeParam !== null
@@ -198,6 +204,9 @@ export async function GET(req: Request) {
       city: city || "",
       q: queryText,
       status: status || "",
+      statuses: statusList.join(","),
+      view,
+      lite: isLite,
       scope: scope || "",
       page,
       pageSize,
@@ -210,19 +219,84 @@ export async function GET(req: Request) {
       return NextResponse.json(cachedPayload)
     }
 
+    // Maintenance tasks are throttled to avoid making every tab-switch heavy.
+    // Still can be forced manually by passing ?maintenance=1.
+    const shouldRunMaintenance =
+      forceMaintenance || (isAdmin && page === 1 && !isLite && (!usePagination || pageSize <= 50))
+    if (shouldRunMaintenance) {
+      const now = Date.now()
+
+      if (forceMaintenance || now - lastUnassignedRepairAt > MAINTENANCE_THROTTLE_MS) {
+        try {
+          lastUnassignedRepairAt = now
+          await runUnassignedQueueRepair()
+        } catch (maintenanceError) {
+          console.error("Auto-repair assignment warning:", maintenanceError)
+        }
+      }
+
+      if (forceMaintenance || now - lastScheduledSyncAt > MAINTENANCE_THROTTLE_MS) {
+        try {
+          lastScheduledSyncAt = now
+          await syncScheduledAdsToRunning()
+        } catch (syncError) {
+          console.error("Sync scheduled ads warning:", syncError)
+        }
+      }
+    }
+
     const [adRequests, totalCount] = await Promise.all([
       db.adRequest.findMany({
         where,
-        include: {
-          promotor: {
-            select: isAdmin
-              ? { id: true, name: true, email: true, city: true, phone: true }
-              : { id: true, name: true, city: true },
-          },
-          contentCreator: { select: { id: true, name: true, email: true } },
-          adReport: true,
-          promotorResult: true,
-        },
+        ...(isLite
+          ? {
+              select: {
+                id: true,
+                campaignCode: true,
+                city: true,
+                startDate: true,
+                testEndDate: true,
+                adStartDate: true,
+                adEndDate: true,
+                durationDays: true,
+                dailyBudget: true,
+                totalBudget: true,
+                ppn: true,
+                totalPayment: true,
+                status: true,
+                briefType: true,
+                paymentProofUrl: true,
+                contentUrl: true,
+                promotorNote: true,
+                metaCampaignId: true,
+                metaAdSetId: true,
+                metaAdIds: true,
+                metaDraftStatus: true,
+                metaDraftError: true,
+                metaDraftUpdatedAt: true,
+                createdAt: true,
+                updatedAt: true,
+                promotor: {
+                  select: isAdmin
+                    ? { id: true, name: true, email: true, city: true, phone: true }
+                    : { id: true, name: true, city: true },
+                },
+                adReport: true,
+                promotorResult: true,
+              },
+            }
+          : {
+              include: {
+                promotor: {
+                  select: isAdmin
+                    ? { id: true, name: true, email: true, city: true, phone: true }
+                    : { id: true, name: true, city: true },
+                },
+                contentCreator: { select: { id: true, name: true, email: true } },
+                adReport: true,
+                promotorResult: true,
+              },
+            }),
         orderBy,
         ...(usePagination ? { skip, take: pageSize } : {}),
       }),
@@ -241,9 +315,10 @@ export async function GET(req: Request) {
       by: ["status"],
       _count: { _all: true },
     })
+    const totalAllStatuses = statusGrouped.reduce((sum, item) => sum + item._count._all, 0)
 
     const statusCounts = {
-      all: await db.adRequest.count({ where: whereForCounts }),
+      all: totalAllStatuses,
       MENUNGGU_PEMBAYARAN: 0,
       MENUNGGU_KONTEN: 0,
       KONTEN_SELESAI: 0,

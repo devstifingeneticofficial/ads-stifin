@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -311,10 +312,27 @@ const getCvrColor = (cvr: number) => {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function StifinDashboard() {
+const STIFIN_TAB_TO_ROUTE: Record<string, string> = {
+  semua: "semua-pengajuan",
+  promotor: "laporan-promotor",
+  advertiser: "laporan-advertiser",
+  top_promotor: "top-promotor",
+  gaji_kreator: "gaji-kreator",
+  bonus_advertiser: "bonus-advertiser",
+}
+
+export default function StifinDashboard({
+  initialTab = "semua",
+  routeBasePath,
+}: {
+  initialTab?: string
+  routeBasePath?: string
+}) {
+  const router = useRouter()
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeMainTab, setActiveMainTab] = useState(initialTab)
 
   // Filter states
   const [semuaSubTab, setSemuaSubTab] = useState<
@@ -350,6 +368,15 @@ export default function StifinDashboard() {
   const [proofPreviewOpen, setProofPreviewOpen] = useState(false)
   const [proofPreviewUrl, setProofPreviewUrl] = useState("")
   const [proofPreviewTitle, setProofPreviewTitle] = useState("Bukti Transfer")
+  const loadedMainTabsRef = useRef(new Set<string>())
+
+  const tabStatusScope = useMemo<Record<string, string[]>>(
+    () => ({
+      promotor: ["SELESAI", "FINAL"],
+      advertiser: ["IKLAN_DIJADWALKAN", "IKLAN_BERJALAN", "SELESAI", "FINAL"],
+    }),
+    []
+  )
 
   const openProofPreview = (url: string, title = "Bukti Transfer") => {
     setProofPreviewUrl(url)
@@ -410,9 +437,19 @@ export default function StifinDashboard() {
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
-  const fetchAdRequests = useCallback(async () => {
+  const fetchAdRequests = useCallback(async (targetTab?: string) => {
+    const tab = targetTab || activeMainTab
+    setLoading(true)
     try {
-      const res = await fetch("/api/ad-requests")
+      const query = new URLSearchParams()
+      query.set("lite", "1")
+      query.set("view", `stifin:${tab}`)
+      const scopedStatuses = tabStatusScope[tab]
+      if (scopedStatuses && scopedStatuses.length > 0) {
+        query.set("statuses", scopedStatuses.join(","))
+      }
+
+      const res = await fetch(`/api/ad-requests?${query.toString()}`)
       if (!res.ok) {
         throw new Error("Gagal mengambil data")
       }
@@ -423,7 +460,7 @@ export default function StifinDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [activeMainTab, tabStatusScope])
 
   const fetchPayoutData = useCallback(async () => {
     setPayoutLoading(true)
@@ -475,12 +512,47 @@ export default function StifinDashboard() {
   }
 
   useEffect(() => {
-    if (user) {
-      fetchAdRequests()
+    if (!initialTab) return
+    setActiveMainTab(initialTab)
+  }, [initialTab])
+
+  useEffect(() => {
+    if (!user) return
+    loadedMainTabsRef.current.clear()
+    const initial = initialTab || "semua"
+    const needsAdRequests = ["semua", "promotor", "advertiser", "top_promotor"].includes(initial)
+    if (needsAdRequests) {
+      loadedMainTabsRef.current.add(initial)
+      fetchAdRequests(initial)
+    } else {
+      setLoading(false)
+    }
+    if (initial === "gaji_kreator") {
       fetchPayoutData()
+    }
+    if (initial === "bonus_advertiser") {
       fetchBonusData()
     }
-  }, [user, fetchAdRequests, fetchPayoutData, fetchBonusData])
+  }, [user, initialTab, fetchAdRequests, fetchPayoutData, fetchBonusData])
+
+  useEffect(() => {
+    if (!user) return
+    const needsAdRequests = ["semua", "promotor", "advertiser", "top_promotor"].includes(activeMainTab)
+    if (!needsAdRequests) return
+    if (loadedMainTabsRef.current.has(activeMainTab)) return
+    loadedMainTabsRef.current.add(activeMainTab)
+    fetchAdRequests(activeMainTab)
+  }, [user, activeMainTab, fetchAdRequests])
+
+  useEffect(() => {
+    if (!user) return
+    if (activeMainTab === "gaji_kreator" && !payoutData) {
+      fetchPayoutData()
+    }
+    if (activeMainTab === "bonus_advertiser" && !bonusData) {
+      fetchBonusData()
+    }
+  }, [user, activeMainTab, payoutData, bonusData, fetchPayoutData, fetchBonusData])
 
   const togglePayoutItem = (adRequestId: string) => {
     setSelectedPayoutItems((prev) =>
@@ -556,7 +628,6 @@ export default function StifinDashboard() {
       setTransferProofUrl("")
       setDisburseDialogOpen(false)
       fetchPayoutData()
-      fetchAdRequests()
     } catch (error: any) {
       toast.error(error?.message || "Gagal mencairkan gaji kreator")
     } finally {
@@ -638,7 +709,6 @@ export default function StifinDashboard() {
       setBonusTransferProofUrl("")
       setBonusDisburseDialogOpen(false)
       fetchBonusData()
-      fetchAdRequests()
     } catch (error: any) {
       toast.error(error?.message || "Gagal mencairkan bonus")
     } finally {
@@ -1116,7 +1186,17 @@ export default function StifinDashboard() {
       </div>
 
       {/* ── Main Tabs ─────────────────────────────────────────────────────── */}
-      <Tabs defaultValue="semua" className="w-full">
+      <Tabs
+        value={activeMainTab}
+        onValueChange={(nextTab) => {
+          setActiveMainTab(nextTab)
+          if (routeBasePath) {
+            const routeSegment = STIFIN_TAB_TO_ROUTE[nextTab] || STIFIN_TAB_TO_ROUTE.semua
+            router.push(`${routeBasePath}/${routeSegment}`)
+          }
+        }}
+        className="w-full"
+      >
         <TabsList className="bg-slate-100/50 p-1 border h-auto flex flex-wrap gap-1">
           <TabsTrigger value="semua" className="text-xs font-semibold gap-2"><BarChart3 className="h-4 w-4" /> Semua Pengajuan</TabsTrigger>
           <TabsTrigger value="promotor" className="text-xs font-semibold gap-2"><FileText className="h-4 w-4" /> Laporan Promotor</TabsTrigger>

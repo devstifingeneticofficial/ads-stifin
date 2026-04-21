@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -246,14 +247,28 @@ const getBriefTypeBadge = (briefType: string) => {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function KontenKreatorDashboard() {
+const KREATOR_TAB_TO_ROUTE: Record<string, string> = {
+  MENUNGGU_KONTEN: "menunggu",
+  DIPROSES: "diproses",
+  SELESAI: "selesai",
+  GAJI: "gaji",
+}
+
+export default function KontenKreatorDashboard({
+  initialTab = "MENUNGGU_KONTEN",
+  routeBasePath,
+}: {
+  initialTab?: string
+  routeBasePath?: string
+}) {
+  const router = useRouter()
   const CREATOR_TAB_PAGE_SIZE = 10
   const PAGINATED_TABS = new Set(["MENUNGGU_KONTEN", "SELESAI"])
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("MENUNGGU_KONTEN")
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [tabPages, setTabPages] = useState<Record<string, number>>({
     MENUNGGU_KONTEN: 1,
     SELESAI: 1,
@@ -277,25 +292,31 @@ export default function KontenKreatorDashboard() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    if (!initialTab) return
+    setActiveTab(initialTab)
+  }, [initialTab])
+
   // ── Fetch ad requests ────────────────────────────────────────────────────
 
   const fetchAdRequests = useCallback(async () => {
     try {
-      const res = await fetch("/api/ad-requests")
+      const statuses = ["MENUNGGU_KONTEN", "DIPROSES", "KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"]
+      const query = new URLSearchParams({
+        lite: "1",
+        view: "kreator:main",
+        statuses: statuses.join(","),
+      })
+      const res = await fetch(`/api/ad-requests?${query.toString()}`)
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data: AdRequest[] = await res.json()
-      // Konten kreator hanya melihat request yang memang ditugaskan ke dirinya.
-      const filteredData = data.filter((ad) => {
-        if (ad.status === "MENUNGGU_PEMBAYARAN") return false
-        return ad.contentCreator?.id === user?.id
-      })
-      setAdRequests(filteredData)
+      setAdRequests(data)
     } catch {
       toast.error("Gagal memuat data pengajuan iklan")
     } finally {
       setLoading(false)
     }
-  }, [user?.id])
+  }, [])
 
   useEffect(() => {
     if (user) {
@@ -351,21 +372,39 @@ export default function KontenKreatorDashboard() {
   }, [user, fetchNotifications])
 
   useEffect(() => {
-    if (user) {
+    if (!user) return
+    if (activeTab === "GAJI" && !payoutData) {
       fetchPayouts()
     }
-  }, [user, fetchPayouts])
+  }, [user, activeTab, payoutData, fetchPayouts])
 
   // ── Computed stats ───────────────────────────────────────────────────────
 
-  const menungguKontenCount = adRequests.filter(
-    (r) => r.status === "MENUNGGU_KONTEN"
-  ).length
-  const diprosesCount = adRequests.filter((r) => r.status === "DIPROSES").length
-  const kontenSelesaiCount = adRequests.filter(
-    (r) => r.status === "KONTEN_SELESAI"
-  ).length
-  const unreadNotifCount = notifications.filter((n) => !n.read).length
+  const statusBuckets = useMemo(() => {
+    const buckets = {
+      MENUNGGU_KONTEN: [] as AdRequest[],
+      DIPROSES: [] as AdRequest[],
+      SELESAI: [] as AdRequest[],
+    }
+    for (const ad of adRequests) {
+      if (ad.status === "MENUNGGU_KONTEN") {
+        buckets.MENUNGGU_KONTEN.push(ad)
+      } else if (ad.status === "DIPROSES") {
+        buckets.DIPROSES.push(ad)
+      } else if (["KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"].includes(ad.status)) {
+        buckets.SELESAI.push(ad)
+      }
+    }
+    return buckets
+  }, [adRequests])
+
+  const menungguKontenCount = statusBuckets.MENUNGGU_KONTEN.length
+  const diprosesCount = statusBuckets.DIPROSES.length
+  const kontenSelesaiCount = statusBuckets.SELESAI.length
+  const unreadNotifCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
+  )
 
   // ── Process content (MENUNGGU_KONTEN → DIPROSES) ─────────────────────────
   const handleProcessContent = async (id: string) => {
@@ -527,12 +566,14 @@ export default function KontenKreatorDashboard() {
   }
 
   const renderAdCards = (tabStatus: string) => {
-    const filtered = adRequests.filter((ad) => {
-      if (tabStatus === "MENUNGGU_KONTEN") return ad.status === "MENUNGGU_KONTEN"
-      if (tabStatus === "DIPROSES") return ad.status === "DIPROSES"
-      if (tabStatus === "SELESAI") return ["KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"].includes(ad.status)
-      return true
-    })
+    const filtered =
+      tabStatus === "MENUNGGU_KONTEN"
+        ? statusBuckets.MENUNGGU_KONTEN
+        : tabStatus === "DIPROSES"
+          ? statusBuckets.DIPROSES
+          : tabStatus === "SELESAI"
+            ? statusBuckets.SELESAI
+            : adRequests
 
     const isPaginatedTab = PAGINATED_TABS.has(tabStatus)
     const currentPage = tabPages[tabStatus] || 1
@@ -815,6 +856,10 @@ export default function KontenKreatorDashboard() {
           setActiveTab(nextTab)
           if (PAGINATED_TABS.has(nextTab)) {
             updateTabPage(nextTab, 1)
+          }
+          if (routeBasePath) {
+            const routeSegment = KREATOR_TAB_TO_ROUTE[nextTab] || KREATOR_TAB_TO_ROUTE.MENUNGGU_KONTEN
+            router.push(`${routeBasePath}/${routeSegment}`)
           }
         }}
         className="space-y-6"
