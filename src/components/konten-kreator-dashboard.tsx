@@ -247,11 +247,17 @@ const getBriefTypeBadge = (briefType: string) => {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function KontenKreatorDashboard() {
+  const CREATOR_TAB_PAGE_SIZE = 10
+  const PAGINATED_TABS = new Set(["MENUNGGU_KONTEN", "SELESAI"])
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("MENUNGGU_KONTEN")
+  const [tabPages, setTabPages] = useState<Record<string, number>>({
+    MENUNGGU_KONTEN: 1,
+    SELESAI: 1,
+  })
   const [payoutData, setPayoutData] = useState<CreatorPayoutData | null>(null)
   const [payoutLoading, setPayoutLoading] = useState(false)
 
@@ -512,6 +518,14 @@ export default function KontenKreatorDashboard() {
     return null
   }
 
+  const updateTabPage = (tabStatus: string, nextPage: number) => {
+    if (!PAGINATED_TABS.has(tabStatus)) return
+    setTabPages((prev) => ({
+      ...prev,
+      [tabStatus]: Math.max(1, nextPage),
+    }))
+  }
+
   const renderAdCards = (tabStatus: string) => {
     const filtered = adRequests.filter((ad) => {
       if (tabStatus === "MENUNGGU_KONTEN") return ad.status === "MENUNGGU_KONTEN"
@@ -519,6 +533,14 @@ export default function KontenKreatorDashboard() {
       if (tabStatus === "SELESAI") return ["KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"].includes(ad.status)
       return true
     })
+
+    const isPaginatedTab = PAGINATED_TABS.has(tabStatus)
+    const currentPage = tabPages[tabStatus] || 1
+    const totalPages = Math.max(1, Math.ceil(filtered.length / CREATOR_TAB_PAGE_SIZE))
+    const safePage = Math.min(currentPage, totalPages)
+    const startIndex = (safePage - 1) * CREATOR_TAB_PAGE_SIZE
+    const endIndex = startIndex + CREATOR_TAB_PAGE_SIZE
+    const visibleItems = isPaginatedTab ? filtered.slice(startIndex, endIndex) : filtered
 
     if (filtered.length === 0) {
       return (
@@ -533,7 +555,7 @@ export default function KontenKreatorDashboard() {
 
     return (
       <div className="space-y-4">
-        {filtered.map((ad) => (
+        {visibleItems.map((ad) => (
           <Card key={ad.id} className="overflow-hidden border-slate-200">
             <CardHeader className="px-4 py-3 pb-0">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1">
@@ -682,6 +704,36 @@ export default function KontenKreatorDashboard() {
             </CardContent>
           </Card>
         ))}
+        {isPaginatedTab && totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {startIndex + 1}-{Math.min(endIndex, filtered.length)} dari {filtered.length} item
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={safePage <= 1}
+                onClick={() => updateTabPage(tabStatus, safePage - 1)}
+              >
+                Sebelumnya
+              </Button>
+              <span className="text-xs text-muted-foreground min-w-[80px] text-center">
+                Halaman {safePage}/{totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={safePage >= totalPages}
+                onClick={() => updateTabPage(tabStatus, safePage + 1)}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -757,7 +809,16 @@ export default function KontenKreatorDashboard() {
       </div>
 
       {/* ── Tabs Navigation ──────────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(nextTab) => {
+          setActiveTab(nextTab)
+          if (PAGINATED_TABS.has(nextTab)) {
+            updateTabPage(nextTab, 1)
+          }
+        }}
+        className="space-y-6"
+      >
         <TabsList className="bg-slate-100/50 p-1 border">
           <TabsTrigger value="MENUNGGU_KONTEN" className="gap-2 relative">
             <Clock className="h-4 w-4" />

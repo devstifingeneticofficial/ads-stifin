@@ -325,6 +325,12 @@ export default function StifinDashboard() {
   const [promotorReportTab, setPromotorReportTab] = useState<"BELUM_LAPOR" | "SUDAH_LAPOR">("SUDAH_LAPOR")
   const [advertiserReportTab, setAdvertiserReportTab] = useState<"SEMUA" | "BERJALAN" | "SELESAI">("BERJALAN")
   const [currentPage, setCurrentPage] = useState(1)
+  const [promotorReportPage, setPromotorReportPage] = useState(1)
+  const [advertiserReportPage, setAdvertiserReportPage] = useState(1)
+  const [creatorUnpaidPage, setCreatorUnpaidPage] = useState(1)
+  const [creatorPaidPage, setCreatorPaidPage] = useState(1)
+  const [bonusUnpaidPage, setBonusUnpaidPage] = useState(1)
+  const [bonusPaidPage, setBonusPaidPage] = useState(1)
   const [pageSizeOption, setPageSizeOption] = useState("10")
   const [customPageSize, setCustomPageSize] = useState("10")
   const [payoutData, setPayoutData] = useState<PayoutData | null>(null)
@@ -813,6 +819,32 @@ export default function StifinDashboard() {
       }))
   }, [adRequests])
 
+  const PROMOTOR_REPORT_PAGE_SIZE = 10
+  const activePromotorRows = useMemo(
+    () => (promotorReportTab === "SUDAH_LAPOR" ? promotorResults : promotorBelumLapor),
+    [promotorReportTab, promotorResults, promotorBelumLapor]
+  )
+  const promotorReportTotalPages = Math.max(
+    1,
+    Math.ceil(activePromotorRows.length / PROMOTOR_REPORT_PAGE_SIZE)
+  )
+  const paginatedPromotorRows = useMemo(() => {
+    const safePage = Math.min(promotorReportPage, promotorReportTotalPages)
+    const start = (safePage - 1) * PROMOTOR_REPORT_PAGE_SIZE
+    const end = start + PROMOTOR_REPORT_PAGE_SIZE
+    return activePromotorRows.slice(start, end)
+  }, [activePromotorRows, promotorReportPage, promotorReportTotalPages])
+
+  useEffect(() => {
+    setPromotorReportPage(1)
+  }, [promotorReportTab])
+
+  useEffect(() => {
+    if (promotorReportPage > promotorReportTotalPages) {
+      setPromotorReportPage(promotorReportTotalPages)
+    }
+  }, [promotorReportPage, promotorReportTotalPages])
+
   const adReports = useMemo(() => {
     return adRequests
       .filter((r) => r.adReport !== null)
@@ -857,6 +889,28 @@ export default function StifinDashboard() {
       ? advertiserReportGroups.berjalan
       : advertiserReportGroups.selesai
 
+  const ADVERTISER_REPORT_PAGE_SIZE = 10
+  const advertiserReportTotalPages = Math.max(
+    1,
+    Math.ceil(activeAdReports.length / ADVERTISER_REPORT_PAGE_SIZE)
+  )
+  const paginatedAdvertiserReports = useMemo(() => {
+    const safePage = Math.min(advertiserReportPage, advertiserReportTotalPages)
+    const start = (safePage - 1) * ADVERTISER_REPORT_PAGE_SIZE
+    const end = start + ADVERTISER_REPORT_PAGE_SIZE
+    return activeAdReports.slice(start, end)
+  }, [activeAdReports, advertiserReportPage, advertiserReportTotalPages])
+
+  useEffect(() => {
+    setAdvertiserReportPage(1)
+  }, [advertiserReportTab])
+
+  useEffect(() => {
+    if (advertiserReportPage > advertiserReportTotalPages) {
+      setAdvertiserReportPage(advertiserReportTotalPages)
+    }
+  }, [advertiserReportPage, advertiserReportTotalPages])
+
   // ── Summary: Promotor results ──────────────────────────────────────────────
 
   const promotorSummaryTotalClients = promotorResults.reduce(
@@ -897,6 +951,44 @@ export default function StifinDashboard() {
   const selectedBonusClients = (bonusData?.unpaidItems || [])
     .filter((item) => selectedBonusItems.includes(item.promotorResultId))
     .reduce((sum, item) => sum + item.clientCount, 0)
+
+  const PAYOUT_PAGE_SIZE = 10
+  const creatorUnpaidItems = payoutData?.unpaidItems || []
+  const creatorPaidBatches = payoutData?.paidBatches || []
+  const bonusUnpaidItems = bonusData?.unpaidItems || []
+  const bonusPaidBatches = bonusData?.paidBatches || []
+
+  const creatorUnpaidTotalPages = Math.max(1, Math.ceil(creatorUnpaidItems.length / PAYOUT_PAGE_SIZE))
+  const creatorPaidTotalPages = Math.max(1, Math.ceil(creatorPaidBatches.length / PAYOUT_PAGE_SIZE))
+  const bonusUnpaidTotalPages = Math.max(1, Math.ceil(bonusUnpaidItems.length / PAYOUT_PAGE_SIZE))
+  const bonusPaidTotalPages = Math.max(1, Math.ceil(bonusPaidBatches.length / PAYOUT_PAGE_SIZE))
+
+  const paginatedCreatorUnpaidItems = creatorUnpaidItems.slice(
+    (Math.min(creatorUnpaidPage, creatorUnpaidTotalPages) - 1) * PAYOUT_PAGE_SIZE,
+    (Math.min(creatorUnpaidPage, creatorUnpaidTotalPages) - 1) * PAYOUT_PAGE_SIZE + PAYOUT_PAGE_SIZE
+  )
+  const paginatedCreatorPaidBatches = creatorPaidBatches.slice(
+    (Math.min(creatorPaidPage, creatorPaidTotalPages) - 1) * PAYOUT_PAGE_SIZE,
+    (Math.min(creatorPaidPage, creatorPaidTotalPages) - 1) * PAYOUT_PAGE_SIZE + PAYOUT_PAGE_SIZE
+  )
+  const paginatedBonusUnpaidItems = bonusUnpaidItems.slice(
+    (Math.min(bonusUnpaidPage, bonusUnpaidTotalPages) - 1) * PAYOUT_PAGE_SIZE,
+    (Math.min(bonusUnpaidPage, bonusUnpaidTotalPages) - 1) * PAYOUT_PAGE_SIZE + PAYOUT_PAGE_SIZE
+  )
+  const paginatedBonusPaidBatches = bonusPaidBatches.slice(
+    (Math.min(bonusPaidPage, bonusPaidTotalPages) - 1) * PAYOUT_PAGE_SIZE,
+    (Math.min(bonusPaidPage, bonusPaidTotalPages) - 1) * PAYOUT_PAGE_SIZE + PAYOUT_PAGE_SIZE
+  )
+
+  useEffect(() => {
+    setCreatorUnpaidPage(1)
+    setCreatorPaidPage(1)
+  }, [creatorUnpaidItems.length, creatorPaidBatches.length])
+
+  useEffect(() => {
+    setBonusUnpaidPage(1)
+    setBonusPaidPage(1)
+  }, [bonusUnpaidItems.length, bonusPaidBatches.length])
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -1484,7 +1576,7 @@ export default function StifinDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(promotorReportTab === "SUDAH_LAPOR" ? promotorResults : promotorBelumLapor).map((r: any) => (
+                        {paginatedPromotorRows.map((r: any) => (
                           <tr
                             key={r.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -1562,7 +1654,7 @@ export default function StifinDashboard() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {(promotorReportTab === "SUDAH_LAPOR" ? promotorResults : promotorBelumLapor).map((r: any) => (
+                {paginatedPromotorRows.map((r: any) => (
                   <Card key={r.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between gap-2">
@@ -1616,6 +1708,47 @@ export default function StifinDashboard() {
                   </Card>
                 ))}
               </div>
+              {activePromotorRows.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    Menampilkan{" "}
+                    {(promotorReportPage - 1) * PROMOTOR_REPORT_PAGE_SIZE + 1}
+                    {" - "}
+                    {Math.min(
+                      promotorReportPage * PROMOTOR_REPORT_PAGE_SIZE,
+                      activePromotorRows.length
+                    )}{" "}
+                    dari {activePromotorRows.length} data
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={promotorReportPage <= 1}
+                      onClick={() =>
+                        setPromotorReportPage((prev) => Math.max(1, prev - 1))
+                      }
+                    >
+                      Sebelumnya
+                    </Button>
+                    <span className="text-xs text-muted-foreground px-1">
+                      Halaman {promotorReportPage} / {promotorReportTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={promotorReportPage >= promotorReportTotalPages}
+                      onClick={() =>
+                        setPromotorReportPage((prev) =>
+                          Math.min(promotorReportTotalPages, prev + 1)
+                        )
+                      }
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
@@ -1762,7 +1895,7 @@ export default function StifinDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {activeAdReports.map((r) => (
+                        {paginatedAdvertiserReports.map((r) => (
                           <tr
                             key={r.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -1807,7 +1940,7 @@ export default function StifinDashboard() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3">
-                {activeAdReports.map((r) => (
+                {paginatedAdvertiserReports.map((r) => (
                   <Card key={r.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center gap-2">
@@ -1860,6 +1993,47 @@ export default function StifinDashboard() {
                   </Card>
                 ))}
               </div>
+              {activeAdReports.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    Menampilkan{" "}
+                    {(advertiserReportPage - 1) * ADVERTISER_REPORT_PAGE_SIZE + 1}
+                    {" - "}
+                    {Math.min(
+                      advertiserReportPage * ADVERTISER_REPORT_PAGE_SIZE,
+                      activeAdReports.length
+                    )}{" "}
+                    dari {activeAdReports.length} data
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={advertiserReportPage <= 1}
+                      onClick={() =>
+                        setAdvertiserReportPage((prev) => Math.max(1, prev - 1))
+                      }
+                    >
+                      Sebelumnya
+                    </Button>
+                    <span className="text-xs text-muted-foreground px-1">
+                      Halaman {advertiserReportPage} / {advertiserReportTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={advertiserReportPage >= advertiserReportTotalPages}
+                      onClick={() =>
+                        setAdvertiserReportPage((prev) =>
+                          Math.min(advertiserReportTotalPages, prev + 1)
+                        )
+                      }
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
@@ -2095,7 +2269,7 @@ export default function StifinDashboard() {
                     </button>
                     <span className="text-xs text-muted-foreground">{selectedPayoutItems.length} item dipilih</span>
                   </div>
-                  {(payoutData?.unpaidItems || []).map((item) => (
+                  {paginatedCreatorUnpaidItems.map((item) => (
                     <label key={item.adRequestId} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2114,6 +2288,31 @@ export default function StifinDashboard() {
                       </div>
                     </label>
                   ))}
+                  {creatorUnpaidItems.length > PAYOUT_PAGE_SIZE && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs text-muted-foreground">
+                        Halaman {creatorUnpaidPage} / {creatorUnpaidTotalPages}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={creatorUnpaidPage <= 1}
+                          onClick={() => setCreatorUnpaidPage((p) => Math.max(1, p - 1))}
+                        >
+                          Sebelumnya
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={creatorUnpaidPage >= creatorUnpaidTotalPages}
+                          onClick={() => setCreatorUnpaidPage((p) => Math.min(creatorUnpaidTotalPages, p + 1))}
+                        >
+                          Berikutnya
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
@@ -2128,7 +2327,7 @@ export default function StifinDashboard() {
               {(payoutData?.paidBatches.length || 0) === 0 ? (
                 <p className="text-sm text-muted-foreground">Belum ada invoice pencairan.</p>
               ) : (
-                (payoutData?.paidBatches || []).map((batch) => (
+                paginatedCreatorPaidBatches.map((batch) => (
                   <details key={batch.id} className="rounded-lg border p-3">
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
@@ -2162,6 +2361,31 @@ export default function StifinDashboard() {
                     </div>
                   </details>
                 ))
+              )}
+              {creatorPaidBatches.length > PAYOUT_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    Halaman {creatorPaidPage} / {creatorPaidTotalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={creatorPaidPage <= 1}
+                      onClick={() => setCreatorPaidPage((p) => Math.max(1, p - 1))}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={creatorPaidPage >= creatorPaidTotalPages}
+                      onClick={() => setCreatorPaidPage((p) => Math.min(creatorPaidTotalPages, p + 1))}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -2258,7 +2482,7 @@ export default function StifinDashboard() {
                     </button>
                     <span className="text-xs text-muted-foreground">{selectedBonusItems.length} item dipilih</span>
                   </div>
-                  {(bonusData?.unpaidItems || []).map((item) => (
+                  {paginatedBonusUnpaidItems.map((item) => (
                     <label key={item.promotorResultId} className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2277,6 +2501,31 @@ export default function StifinDashboard() {
                       </div>
                     </label>
                   ))}
+                  {bonusUnpaidItems.length > PAYOUT_PAGE_SIZE && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-xs text-muted-foreground">
+                        Halaman {bonusUnpaidPage} / {bonusUnpaidTotalPages}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={bonusUnpaidPage <= 1}
+                          onClick={() => setBonusUnpaidPage((p) => Math.max(1, p - 1))}
+                        >
+                          Sebelumnya
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={bonusUnpaidPage >= bonusUnpaidTotalPages}
+                          onClick={() => setBonusUnpaidPage((p) => Math.min(bonusUnpaidTotalPages, p + 1))}
+                        >
+                          Berikutnya
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
@@ -2291,7 +2540,7 @@ export default function StifinDashboard() {
               {(bonusData?.paidBatches.length || 0) === 0 ? (
                 <p className="text-sm text-muted-foreground">Belum ada invoice bonus.</p>
               ) : (
-                (bonusData?.paidBatches || []).map((batch) => (
+                paginatedBonusPaidBatches.map((batch) => (
                   <details key={batch.id} className="rounded-lg border p-3">
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
@@ -2325,6 +2574,31 @@ export default function StifinDashboard() {
                     </div>
                   </details>
                 ))
+              )}
+              {bonusPaidBatches.length > PAYOUT_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    Halaman {bonusPaidPage} / {bonusPaidTotalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bonusPaidPage <= 1}
+                      onClick={() => setBonusPaidPage((p) => Math.max(1, p - 1))}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bonusPaidPage >= bonusPaidTotalPages}
+                      onClick={() => setBonusPaidPage((p) => Math.min(bonusPaidTotalPages, p + 1))}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>

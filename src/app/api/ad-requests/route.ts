@@ -9,6 +9,35 @@ import { buildCampaignCode, buildCampaignName } from "@/lib/campaign-naming"
 
 const CREATOR_ROTATION_KEY = "content_creator_rotation_index"
 const MIN_AUTO_SALDO_APPLY = 100_000
+const AD_REQUESTS_CACHE_TTL_MS = 20_000
+
+type AdRequestsCacheEntry = {
+  expiresAt: number
+  payload: unknown
+}
+
+const adRequestsCache = new Map<string, AdRequestsCacheEntry>()
+
+function clearAdRequestsCache() {
+  adRequestsCache.clear()
+}
+
+function readAdRequestsCache(key: string) {
+  const hit = adRequestsCache.get(key)
+  if (!hit) return null
+  if (Date.now() > hit.expiresAt) {
+    adRequestsCache.delete(key)
+    return null
+  }
+  return hit.payload
+}
+
+function writeAdRequestsCache(key: string, payload: unknown) {
+  adRequestsCache.set(key, {
+    expiresAt: Date.now() + AD_REQUESTS_CACHE_TTL_MS,
+    payload,
+  })
+}
 
 async function generateUniqueCampaignCode(): Promise<string> {
   for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -32,8 +61,13 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url)
     const city = searchParams.get("city")
+    const queryText = (searchParams.get("q") || "").trim()
     const status = searchParams.get("status")
     const scope = searchParams.get("scope") // "all" for global historical data
+    const pageParam = searchParams.get("page")
+    const pageSizeParam = searchParams.get("pageSize")
+    const sortByParam = (searchParams.get("sortBy") || "createdAt").trim()
+    const sortOrderParam = (searchParams.get("sortOrder") || "desc").trim().toLowerCase()
     const isAdmin = session.role === "ADVERTISER" || session.role === "STIFIN"
     const isPromotorGlobalScope = scope === "all" && session.role === "PROMOTOR"
 
@@ -54,6 +88,13 @@ export async function GET(req: Request) {
 
     if (city) {
       where.city = { contains: city, mode: "insensitive" }
+    }
+
+    if (queryText) {
+      where.OR = [
+        { city: { contains: queryText, mode: "insensitive" } },
+        { promotor: { name: { contains: queryText, mode: "insensitive" } } },
+      ]
     }
 
     if (status) {
@@ -140,22 +181,99 @@ export async function GET(req: Request) {
       console.error("Sync scheduled ads warning:", syncError)
     }
 
-    const adRequests = await db.adRequest.findMany({
-      where,
-      include: {
-        promotor: {
-          select: isAdmin
-            ? { id: true, name: true, email: true, city: true, phone: true }
-            : { id: true, name: true, city: true },
+    const usePagination = pageParam !== null || pageSizeParam !== null
+    const page = Math.max(1, Number.parseInt(pageParam || "1", 10) || 1)
+    const pageSizeRaw = Number.parseInt(pageSizeParam || "40", 10) || 40
+    const pageSize = Math.min(Math.max(pageSizeRaw, 1), 200)
+    const skip = (page - 1) * pageSize
+    const sortOrder: "asc" | "desc" = sortOrderParam === "asc" ? "asc" : "desc"
+
+    const sortableFields = new Set(["createdAt", "city", "dailyBudget", "durationDays", "totalPayment"])
+    const sortBy = sortableFields.has(sortByParam) ? sortByParam : "createdAt"
+    const orderBy = { [sortBy]: sortOrder } as Record<string, "asc" | "desc">
+
+    const cacheKey = JSON.stringify({
+      userId: session.id,
+      role: session.role,
+      city: city || "",
+      q: queryText,
+      status: status || "",
+      scope: scope || "",
+      page,
+      pageSize,
+      usePagination,
+      sortBy,
+      sortOrder,
+    })
+    const cachedPayload = readAdRequestsCache(cacheKey)
+    if (cachedPayload) {
+      return NextResponse.json(cachedPayload)
+    }
+
+    const [adRequests, totalCount] = await Promise.all([
+      db.adRequest.findMany({
+        where,
+        include: {
+          promotor: {
+            select: isAdmin
+              ? { id: true, name: true, email: true, city: true, phone: true }
+              : { id: true, name: true, city: true },
+          },
+          contentCreator: { select: { id: true, name: true, email: true } },
+          adReport: true,
+          promotorResult: true,
         },
-        contentCreator: { select: { id: true, name: true, email: true } },
-        adReport: true,
-        promotorResult: true,
-      },
-      orderBy: { createdAt: "desc" },
+        orderBy,
+        ...(usePagination ? { skip, take: pageSize } : {}),
+      }),
+      db.adRequest.count({ where }),
+    ])
+
+    if (!usePagination) {
+      writeAdRequestsCache(cacheKey, adRequests)
+      return NextResponse.json(adRequests)
+    }
+
+    const whereForCounts = { ...where }
+    delete (whereForCounts as any).status
+    const statusGrouped = await db.adRequest.groupBy({
+      where: whereForCounts,
+      by: ["status"],
+      _count: { _all: true },
     })
 
-    return NextResponse.json(adRequests)
+    const statusCounts = {
+      all: await db.adRequest.count({ where: whereForCounts }),
+      MENUNGGU_PEMBAYARAN: 0,
+      MENUNGGU_KONTEN: 0,
+      KONTEN_SELESAI: 0,
+      IKLAN_DIJADWALKAN: 0,
+      IKLAN_BERJALAN: 0,
+      SELESAI: 0,
+      FINAL: 0,
+    }
+
+    for (const item of statusGrouped) {
+      if (item.status === "MENUNGGU_VERIFIKASI_PEMBAYARAN") {
+        statusCounts.MENUNGGU_PEMBAYARAN += item._count._all
+      } else if (item.status in statusCounts) {
+        ;(statusCounts as any)[item.status] += item._count._all
+      }
+    }
+
+    const payload = {
+      items: adRequests,
+      pagination: {
+        page,
+        pageSize,
+        total: totalCount,
+        hasMore: skip + adRequests.length < totalCount,
+      },
+      statusCounts,
+    }
+
+    writeAdRequestsCache(cacheKey, payload)
+    return NextResponse.json(payload)
   } catch (error) {
     console.error("GET ad-requests error:", error)
     return NextResponse.json({ error: "Gagal mengambil data" }, { status: 500 })
@@ -309,6 +427,7 @@ export async function POST(req: Request) {
       `Promotor ${adRequest.promotor.name} dari ${city} mengajukan iklan senilai Rp ${totalPayment.toLocaleString("id-ID")}${saldoApplied > 0 ? ` (saldo terpakai Rp ${saldoApplied.toLocaleString("id-ID")})` : ""}`,
       "AD_REQUEST"
     )
+    clearAdRequestsCache()
 
     return NextResponse.json(adRequest, { status: 201 })
   } catch (error) {

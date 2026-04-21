@@ -91,6 +91,19 @@ interface AdRequest {
   promotor: { id: string; name: string; email: string; city: string }
 }
 
+interface MetaSyncStatus {
+  lastSuccess: {
+    at: string
+    linkedCount: number
+    updatedCount: number
+    skippedCount: number
+  } | null
+  lastError: {
+    at: string
+    error: string | null
+  } | null
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const formatRupiah = (value: number): string =>
@@ -118,6 +131,9 @@ const getCprToneTextClass = (cpr: number | null | undefined): string => {
 }
 
 const MIN_AUTO_SALDO_APPLY = 100_000
+const GLOBAL_ADS_PAGE_SIZE = 15
+const HISTORY_PAGE_SIZE = 10
+const FINAL_PAGE_SIZE = 10
 
 const formatDate = (dateStr: string): string => {
   const date = new Date(dateStr)
@@ -252,6 +268,10 @@ export default function PromotorDashboard() {
   const [globalSortKey, setGlobalSortKey] = useState<"LEADS" | "KLIEN" | "CPR" | null>(null)
   const [globalSortOrder, setGlobalSortOrder] = useState<"asc" | "desc">("desc")
   const [globalSortDialogOpen, setGlobalSortDialogOpen] = useState(false)
+  const [globalPage, setGlobalPage] = useState(1)
+  const [historyPage, setHistoryPage] = useState(1)
+  const [finalPage, setFinalPage] = useState(1)
+  const [metaSyncStatus, setMetaSyncStatus] = useState<MetaSyncStatus | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // Dialog states
@@ -441,6 +461,18 @@ export default function PromotorDashboard() {
     }
   }, [syncGlobalAdsFromMeta])
 
+  useEffect(() => {
+    setGlobalPage(1)
+  }, [globalSearch, globalTargetFilter, globalSortKey, globalSortOrder, globalAds.length])
+
+  useEffect(() => {
+    setHistoryPage(1)
+  }, [searchQuery, adRequests.length])
+
+  useEffect(() => {
+    setFinalPage(1)
+  }, [adRequests.length, pengajuanTab])
+
   const fetchWaLink = useCallback(async () => {
     try {
       const res = await fetch("/api/settings")
@@ -449,13 +481,30 @@ export default function PromotorDashboard() {
     } catch { /* silent */ }
   }, [])
 
+  const fetchMetaSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/meta/sync-performance")
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.ok) {
+        setMetaSyncStatus({
+          lastSuccess: data.lastSuccess || null,
+          lastError: data.lastError || null,
+        })
+      }
+    } catch {
+      // silent
+    }
+  }, [])
+
   useEffect(() => {
     if (user) {
       fetchAdRequests()
-      fetchGlobalAds(true)
+      fetchGlobalAds(false)
       fetchWaLink()
+      fetchMetaSyncStatus()
     }
-  }, [user, fetchAdRequests, fetchGlobalAds, fetchWaLink])
+  }, [user, fetchAdRequests, fetchGlobalAds, fetchWaLink, fetchMetaSyncStatus])
 
   useEffect(() => {
     if (!user) return
@@ -481,6 +530,16 @@ export default function PromotorDashboard() {
       return true
     })
 
+    const isFinalTab = tabType === "FINAL"
+    const finalTotalItems = filtered.length
+    const finalTotalPages = Math.max(1, Math.ceil(finalTotalItems / FINAL_PAGE_SIZE))
+    const finalCurrentPage = Math.min(finalPage, finalTotalPages)
+    const finalStartIdx = (finalCurrentPage - 1) * FINAL_PAGE_SIZE
+    const finalEndIdxExclusive = finalStartIdx + FINAL_PAGE_SIZE
+    const finalPaginated = isFinalTab ? filtered.slice(finalStartIdx, finalEndIdxExclusive) : filtered
+    const finalFirstItemNumber = finalTotalItems === 0 ? 0 : finalStartIdx + 1
+    const finalLastItemNumber = Math.min(finalEndIdxExclusive, finalTotalItems)
+
     if (filtered.length === 0) {
       return (
         <Card className="border-dashed shadow-none bg-slate-50/50">
@@ -500,7 +559,7 @@ export default function PromotorDashboard() {
 
     return (
       <div className="space-y-4">
-        {filtered.map((ad) => (
+        {finalPaginated.map((ad) => (
           <Card key={ad.id}>
             <CardHeader className="px-4 py-3 pb-0">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
@@ -899,6 +958,36 @@ export default function PromotorDashboard() {
             </CardContent>
           </Card>
         ))}
+        {isFinalTab && finalTotalPages > 1 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border bg-white px-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {finalFirstItemNumber}-{finalLastItemNumber} dari {finalTotalItems} data
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-3 text-xs"
+                onClick={() => setFinalPage((prev) => Math.max(prev - 1, 1))}
+                disabled={finalCurrentPage <= 1}
+              >
+                Sebelumnya
+              </Button>
+              <span className="text-xs font-semibold text-slate-700">
+                Hal {finalCurrentPage}/{finalTotalPages}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-3 text-xs"
+                onClick={() => setFinalPage((prev) => Math.min(prev + 1, finalTotalPages))}
+                disabled={finalCurrentPage >= finalTotalPages}
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -1161,6 +1250,14 @@ export default function PromotorDashboard() {
   const filteredHistory = adRequests.filter((r) =>
     r.city.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const historyTotalItems = filteredHistory.length
+  const historyTotalPages = Math.max(1, Math.ceil(historyTotalItems / HISTORY_PAGE_SIZE))
+  const historyCurrentPage = Math.min(historyPage, historyTotalPages)
+  const historyStartIdx = (historyCurrentPage - 1) * HISTORY_PAGE_SIZE
+  const historyEndIdxExclusive = historyStartIdx + HISTORY_PAGE_SIZE
+  const paginatedHistory = filteredHistory.slice(historyStartIdx, historyEndIdxExclusive)
+  const historyFirstItemNumber = historyTotalItems === 0 ? 0 : historyStartIdx + 1
+  const historyLastItemNumber = Math.min(historyEndIdxExclusive, historyTotalItems)
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
@@ -1578,7 +1675,7 @@ export default function PromotorDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredHistory.map((ad) => (
+                        {paginatedHistory.map((ad) => (
                           <tr
                             key={ad.id}
                             className="border-b last:border-0 hover:bg-muted/30 transition-colors"
@@ -1601,7 +1698,7 @@ export default function PromotorDashboard() {
 
                   {/* Mobile cards */}
                   <div className="md:hidden divide-y">
-                    {filteredHistory.map((ad) => (
+                    {paginatedHistory.map((ad) => (
                       <div key={ad.id} className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="font-medium">{ad.city}</span>
@@ -1624,6 +1721,36 @@ export default function PromotorDashboard() {
                       </div>
                     ))}
                   </div>
+                  {historyTotalPages > 1 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-t bg-white px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Menampilkan {historyFirstItemNumber}-{historyLastItemNumber} dari {historyTotalItems} data
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setHistoryPage((prev) => Math.max(prev - 1, 1))}
+                          disabled={historyCurrentPage <= 1}
+                        >
+                          Sebelumnya
+                        </Button>
+                        <span className="text-xs font-semibold text-slate-700">
+                          Hal {historyCurrentPage}/{historyTotalPages}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setHistoryPage((prev) => Math.min(prev + 1, historyTotalPages))}
+                          disabled={historyCurrentPage >= historyTotalPages}
+                        >
+                          Berikutnya
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -1646,6 +1773,7 @@ export default function PromotorDashboard() {
                 className="gap-2"
                 onClick={async () => {
                   await fetchGlobalAds(true)
+                  await fetchMetaSyncStatus()
                 }}
                 disabled={syncingGlobalAds}
               >
@@ -1653,6 +1781,11 @@ export default function PromotorDashboard() {
                 {syncingGlobalAds ? "Sinkron..." : "Sinkron Meta"}
               </Button>
             </div>
+            {metaSyncStatus?.lastSuccess?.at && (
+              <p className="text-[11px] text-muted-foreground -mt-2">
+                Terakhir sinkron: {new Date(metaSyncStatus.lastSuccess.at).toLocaleString("id-ID")} • update {metaSyncStatus.lastSuccess.updatedCount} data
+              </p>
+            )}
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1739,24 +1872,7 @@ export default function PromotorDashboard() {
               const toStartOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
               const now = new Date()
               const today = toStartOfDay(now)
-              const cityLatestMap = new Map<string, AdRequest>()
-
-              for (const ad of baseFiltered) {
-                const cityKey = ad.city.trim().toLowerCase()
-                const existing = cityLatestMap.get(cityKey)
-                if (!existing) {
-                  cityLatestMap.set(cityKey, ad)
-                  continue
-                }
-
-                const existingDate = getTestReferenceDate(existing).getTime()
-                const nextDate = getTestReferenceDate(ad).getTime()
-                if (nextDate > existingDate) {
-                  cityLatestMap.set(cityKey, ad)
-                }
-              }
-
-              const filtered = Array.from(cityLatestMap.values())
+              const filtered = baseFiltered
                 .filter((ad) => {
                   const lastTargetDate = toStartOfDay(getTestReferenceDate(ad))
                   const diffDays = Math.floor((today.getTime() - lastTargetDate.getTime()) / (1000 * 60 * 60 * 24))
@@ -1792,6 +1908,15 @@ export default function PromotorDashboard() {
                   }
                   return globalSortOrder === "asc" ? diff : -diff
                 })
+
+              const totalItems = filtered.length
+              const totalPages = Math.max(1, Math.ceil(totalItems / GLOBAL_ADS_PAGE_SIZE))
+              const currentPage = Math.min(globalPage, totalPages)
+              const startIdx = (currentPage - 1) * GLOBAL_ADS_PAGE_SIZE
+              const endIdxExclusive = startIdx + GLOBAL_ADS_PAGE_SIZE
+              const paginated = filtered.slice(startIdx, endIdxExclusive)
+              const firstItemNumber = totalItems === 0 ? 0 : startIdx + 1
+              const lastItemNumber = Math.min(endIdxExclusive, totalItems)
 
               if (filtered.length === 0) {
                 return (
@@ -1829,7 +1954,7 @@ export default function PromotorDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {filtered.map((ad) => (
+                        {paginated.map((ad) => (
                           <tr key={ad.id} className="hover:bg-muted/30 transition-colors">
                             <td className="p-4 font-medium">{ad.promotor.name}</td>
                             <td className="p-4">{ad.city}</td>
@@ -1861,7 +1986,7 @@ export default function PromotorDashboard() {
 
                   {/* Mobile Cards */}
                   <div className="md:hidden space-y-1.5">
-                    {filtered.map((ad) => (
+                    {paginated.map((ad) => (
                       <Card key={ad.id} className="border-l-4 border-l-green-500">
                         <CardContent className="px-3 py-1.5">
                           <div className="flex items-start justify-between gap-2">
@@ -1906,6 +2031,37 @@ export default function PromotorDashboard() {
                       </Card>
                     ))}
                   </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border bg-white px-3 py-2">
+                      <p className="text-xs text-muted-foreground">
+                        Menampilkan {firstItemNumber}-{lastItemNumber} dari {totalItems} data
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setGlobalPage((prev) => Math.max(prev - 1, 1))}
+                          disabled={currentPage <= 1}
+                        >
+                          Sebelumnya
+                        </Button>
+                        <span className="text-xs font-semibold text-slate-700">
+                          Hal {currentPage}/{totalPages}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 text-xs"
+                          onClick={() => setGlobalPage((prev) => Math.min(prev + 1, totalPages))}
+                          disabled={currentPage >= totalPages}
+                        >
+                          Berikutnya
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}

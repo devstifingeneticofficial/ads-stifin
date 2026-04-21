@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useAuth } from "@/lib/auth-context"
 import { toast } from "sonner"
 import {
@@ -269,6 +269,19 @@ interface GlobalAnnouncement {
   endsAt: string | null
   createdAt: string
   updatedAt: string
+}
+
+interface MetaSyncStatus {
+  lastSuccess: {
+    at: string
+    linkedCount: number
+    updatedCount: number
+    skippedCount: number
+  } | null
+  lastError: {
+    at: string
+    error: string | null
+  } | null
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -555,7 +568,26 @@ export default function AdvertiserDashboard() {
   const { user } = useAuth()
   const [adRequests, setAdRequests] = useState<AdRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("overview")
   const [statusTab, setStatusTab] = useState("all")
+  const [overviewSearch, setOverviewSearch] = useState("")
+  const [debouncedOverviewSearch, setDebouncedOverviewSearch] = useState("")
+  const [overviewSortBy, setOverviewSortBy] = useState<"createdAt" | "city" | "dailyBudget" | "durationDays" | "totalPayment">("createdAt")
+  const [overviewSortOrder, setOverviewSortOrder] = useState<"asc" | "desc">("desc")
+  const [overviewPage, setOverviewPage] = useState(1)
+  const [overviewHasMore, setOverviewHasMore] = useState(false)
+  const [loadingMoreOverview, setLoadingMoreOverview] = useState(false)
+  const [hasLoadedFullAdRequests, setHasLoadedFullAdRequests] = useState(false)
+  const [serverStatusCounts, setServerStatusCounts] = useState<{
+    all: number
+    MENUNGGU_PEMBAYARAN: number
+    MENUNGGU_KONTEN: number
+    KONTEN_SELESAI: number
+    IKLAN_DIJADWALKAN: number
+    IKLAN_BERJALAN: number
+    SELESAI: number
+    FINAL: number
+  } | null>(null)
 
   // Master Brief states
   const [briefTemplates, setBriefTemplates] = useState<BriefTemplate[]>([])
@@ -583,6 +615,10 @@ export default function AdvertiserDashboard() {
   const [inputCPR, setInputCPR] = useState("")
   const [payoutMonitor, setPayoutMonitor] = useState<PayoutMonitorData | null>(null)
   const [bonusMonitor, setBonusMonitor] = useState<BonusMonitorData | null>(null)
+  const [payoutUnpaidPage, setPayoutUnpaidPage] = useState(1)
+  const [payoutPaidPage, setPayoutPaidPage] = useState(1)
+  const [bonusUnpaidPage, setBonusUnpaidPage] = useState(1)
+  const [bonusPaidPage, setBonusPaidPage] = useState(1)
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([])
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountItem[]>([])
   const [stifinAdmins, setStifinAdmins] = useState<LinkableAccountUser[]>([])
@@ -626,6 +662,7 @@ export default function AdvertiserDashboard() {
   const [metaTestResult, setMetaTestResult] = useState<string | null>(null)
   const [metaTesting, setMetaTesting] = useState(false)
   const [metaSyncingPerformance, setMetaSyncingPerformance] = useState(false)
+  const [metaSyncStatus, setMetaSyncStatus] = useState<MetaSyncStatus | null>(null)
   const [metaSavingTemplate, setMetaSavingTemplate] = useState(false)
   const [legacyPromotorId, setLegacyPromotorId] = useState("")
   const [legacyDurationDays, setLegacyDurationDays] = useState("")
@@ -640,6 +677,7 @@ export default function AdvertiserDashboard() {
   const [metaRetryingAdId, setMetaRetryingAdId] = useState<string | null>(null)
   const [metaDraftMode, setMetaDraftMode] = useState<MetaDraftMode>("GENERATE")
   const restoreConfigInputRef = useRef<HTMLInputElement | null>(null)
+  const loadedTabsRef = useRef(new Set<string>())
 
   useEffect(() => {
     try {
@@ -760,6 +798,66 @@ export default function AdvertiserDashboard() {
       promotor: latest.promotor.name,
     }
   })()
+  const MONITOR_PAGE_SIZE = 10
+  const payoutUnpaidItems = payoutMonitor?.unpaidItems || []
+  const payoutPaidBatches = payoutMonitor?.paidBatches || []
+  const bonusUnpaidItems = bonusMonitor?.unpaidItems || []
+  const bonusPaidBatches = bonusMonitor?.paidBatches || []
+
+  const payoutUnpaidTotalPages = Math.max(1, Math.ceil(payoutUnpaidItems.length / MONITOR_PAGE_SIZE))
+  const payoutPaidTotalPages = Math.max(1, Math.ceil(payoutPaidBatches.length / MONITOR_PAGE_SIZE))
+  const bonusUnpaidTotalPages = Math.max(1, Math.ceil(bonusUnpaidItems.length / MONITOR_PAGE_SIZE))
+  const bonusPaidTotalPages = Math.max(1, Math.ceil(bonusPaidBatches.length / MONITOR_PAGE_SIZE))
+
+  const paginatedPayoutUnpaidItems = useMemo(() => {
+    const safePage = Math.min(payoutUnpaidPage, payoutUnpaidTotalPages)
+    const start = (safePage - 1) * MONITOR_PAGE_SIZE
+    return payoutUnpaidItems.slice(start, start + MONITOR_PAGE_SIZE)
+  }, [payoutUnpaidItems, payoutUnpaidPage, payoutUnpaidTotalPages])
+
+  const paginatedPayoutPaidBatches = useMemo(() => {
+    const safePage = Math.min(payoutPaidPage, payoutPaidTotalPages)
+    const start = (safePage - 1) * MONITOR_PAGE_SIZE
+    return payoutPaidBatches.slice(start, start + MONITOR_PAGE_SIZE)
+  }, [payoutPaidBatches, payoutPaidPage, payoutPaidTotalPages])
+
+  const paginatedBonusUnpaidItems = useMemo(() => {
+    const safePage = Math.min(bonusUnpaidPage, bonusUnpaidTotalPages)
+    const start = (safePage - 1) * MONITOR_PAGE_SIZE
+    return bonusUnpaidItems.slice(start, start + MONITOR_PAGE_SIZE)
+  }, [bonusUnpaidItems, bonusUnpaidPage, bonusUnpaidTotalPages])
+
+  const paginatedBonusPaidBatches = useMemo(() => {
+    const safePage = Math.min(bonusPaidPage, bonusPaidTotalPages)
+    const start = (safePage - 1) * MONITOR_PAGE_SIZE
+    return bonusPaidBatches.slice(start, start + MONITOR_PAGE_SIZE)
+  }, [bonusPaidBatches, bonusPaidPage, bonusPaidTotalPages])
+
+  useEffect(() => {
+    setPayoutUnpaidPage(1)
+    setPayoutPaidPage(1)
+  }, [payoutUnpaidItems.length, payoutPaidBatches.length])
+
+  useEffect(() => {
+    setBonusUnpaidPage(1)
+    setBonusPaidPage(1)
+  }, [bonusUnpaidItems.length, bonusPaidBatches.length])
+
+  const fetchMetaSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/meta/sync-performance")
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.ok) {
+        setMetaSyncStatus({
+          lastSuccess: data.lastSuccess || null,
+          lastError: data.lastError || null,
+        })
+      }
+    } catch {
+      // silent
+    }
+  }, [])
 
   const syncMetaPerformanceData = useCallback(async (showToast = false) => {
     setMetaSyncingPerformance(true)
@@ -772,28 +870,82 @@ export default function AdvertiserDashboard() {
       if (showToast && data?.ok) {
         toast.success(`Sinkron Meta: ${data.linkedCount} mapping, ${data.updatedCount} data terbarui`)
       }
+      await fetchMetaSyncStatus()
     } catch {
       // silent fail; advertiser can still work with existing data
     } finally {
       setMetaSyncingPerformance(false)
     }
-  }, [])
+  }, [fetchMetaSyncStatus])
 
-  const fetchAdRequests = useCallback(async (runSync = false) => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedOverviewSearch(overviewSearch.trim())
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [overviewSearch])
+
+  const fetchAdRequests = useCallback(async (
+    runSync = false,
+    options?: { page?: number; append?: boolean; forceFull?: boolean }
+  ) => {
     if (runSync) {
       await syncMetaPerformanceData(false)
     }
+
+    const page = options?.page || 1
+    const append = options?.append || false
+    const forceFull = options?.forceFull || false
+    const shouldUseOverviewPaging = activeTab === "overview" && !forceFull
+
     try {
-      const res = await fetch("/api/ad-requests")
+      if (append) setLoadingMoreOverview(true)
+      const query = new URLSearchParams()
+      let url = "/api/ad-requests"
+      if (shouldUseOverviewPaging) {
+        query.set("page", String(page))
+        query.set("pageSize", "60")
+        query.set("sortBy", overviewSortBy)
+        query.set("sortOrder", overviewSortOrder)
+        if (debouncedOverviewSearch) {
+          query.set("q", debouncedOverviewSearch)
+        }
+        if (statusTab !== "all" && statusTab !== "MENUNGGU_PEMBAYARAN") {
+          query.set("status", statusTab)
+        }
+        url = `/api/ad-requests?${query.toString()}`
+      }
+
+      const res = await fetch(url)
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data = await res.json()
-      setAdRequests(data)
+      if (shouldUseOverviewPaging) {
+        const items: AdRequest[] = data.items || []
+        if (append) {
+          setAdRequests((prev) => [...prev, ...items])
+        } else {
+          setAdRequests(items)
+        }
+        setOverviewPage(data.pagination?.page || page)
+        setOverviewHasMore(Boolean(data.pagination?.hasMore))
+        if (data.statusCounts) {
+          setServerStatusCounts(data.statusCounts)
+        }
+        setHasLoadedFullAdRequests(false)
+      } else {
+        setAdRequests(data)
+        setOverviewPage(1)
+        setOverviewHasMore(false)
+        setServerStatusCounts(null)
+        setHasLoadedFullAdRequests(true)
+      }
     } catch {
       toast.error("Gagal memuat data pengajuan iklan")
     } finally {
+      setLoadingMoreOverview(false)
       setLoading(false)
     }
-  }, [syncMetaPerformanceData])
+  }, [activeTab, debouncedOverviewSearch, overviewSortBy, overviewSortOrder, statusTab, syncMetaPerformanceData])
 
   const fetchBriefTemplates = useCallback(async () => {
     try {
@@ -906,19 +1058,76 @@ export default function AdvertiserDashboard() {
   }, [])
 
   useEffect(() => {
-    if (user) {
-      fetchAdRequests(true)
+    if (!user) return
+    loadedTabsRef.current.clear()
+    setActiveTab("overview")
+    setStatusTab("all")
+    setOverviewSearch("")
+    setDebouncedOverviewSearch("")
+    // Load awal dibuat ringan: tanpa auto-sync dan pakai pagination backend.
+    fetchAdRequests(false, { page: 1, append: false })
+    fetchMetaSyncStatus()
+  }, [user])
+
+  useEffect(() => {
+    if (!user || !activeTab) return
+    if (loadedTabsRef.current.has(activeTab)) return
+
+    loadedTabsRef.current.add(activeTab)
+    if (activeTab === "master") {
       fetchBriefTemplates()
+      return
+    }
+    if (activeTab === "meta_ads") {
+      fetchMetaTemplate()
+      return
+    }
+    if (activeTab === "whatsapp") {
       fetchNotifTemplates()
       fetchWaChannelLink()
+      return
+    }
+    if (activeTab === "alerts") {
+      fetchAnnouncements()
+      return
+    }
+    if (activeTab === "payouts") {
       fetchPayoutMonitor()
+      return
+    }
+    if (activeTab === "bonus_payouts") {
       fetchBonusMonitor()
+      return
+    }
+    if (activeTab === "users") {
       fetchManagedUsers()
       fetchManagedLinks()
-      fetchAnnouncements()
-      fetchMetaTemplate()
+      return
     }
-  }, [user, fetchAdRequests, fetchBriefTemplates, fetchNotifTemplates, fetchWaChannelLink, fetchPayoutMonitor, fetchBonusMonitor, fetchManagedUsers, fetchManagedLinks, fetchAnnouncements, fetchMetaTemplate])
+
+    if (activeTab !== "overview" && !hasLoadedFullAdRequests) {
+      fetchAdRequests(false, { forceFull: true })
+    }
+  }, [
+    user,
+    activeTab,
+    hasLoadedFullAdRequests,
+    fetchBriefTemplates,
+    fetchMetaTemplate,
+    fetchNotifTemplates,
+    fetchWaChannelLink,
+    fetchAnnouncements,
+    fetchPayoutMonitor,
+    fetchBonusMonitor,
+    fetchManagedUsers,
+    fetchManagedLinks,
+    fetchAdRequests,
+  ])
+
+  useEffect(() => {
+    if (!user || activeTab !== "overview") return
+    fetchAdRequests(false, { page: 1, append: false })
+  }, [statusTab, activeTab, overviewSortBy, overviewSortOrder, debouncedOverviewSearch, user, fetchAdRequests])
 
   useEffect(() => {
     if (selectedAd && scheduleMode === "DEFAULT") {
@@ -1565,7 +1774,7 @@ export default function AdvertiserDashboard() {
 
   const totalSpentAmount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.amountSpent || 0), 0)
   const totalLeadsCount = adRequests.reduce((acc, curr) => acc + (curr.adReport?.totalLeads || 0), 0)
-  const statusCounts = {
+  const statusCounts = serverStatusCounts || {
     all: adRequests.length,
     MENUNGGU_PEMBAYARAN: adRequests.filter((r) => ["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(r.status)).length,
     MENUNGGU_KONTEN: adRequests.filter((r) => r.status === "MENUNGGU_KONTEN").length,
@@ -1629,7 +1838,7 @@ export default function AdvertiserDashboard() {
         </Card>
       </div>
 
-      <Tabs defaultValue="overview" className="w-full space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
         <TabsList className="w-full bg-slate-100/50 p-1 border h-auto flex flex-wrap justify-start gap-1">
           <TabsTrigger value="overview" className="gap-2 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Overview</TabsTrigger>
           <TabsTrigger value="master" className="gap-2 text-xs sm:text-sm"><FileText className="h-4 w-4" /> Master Brief</TabsTrigger>
@@ -1649,19 +1858,54 @@ export default function AdvertiserDashboard() {
                 <h2 className="text-lg font-semibold">Daftar Pengajuan Iklan</h2>
                 <p className="text-xs text-muted-foreground">Kelola pengajuan iklan Anda</p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 gap-2"
-                onClick={async () => {
-                  await syncMetaPerformanceData(true)
-                  await fetchAdRequests(false)
-                }}
-                disabled={metaSyncingPerformance}
-              >
-                <RefreshCcw className={`h-4 w-4 ${metaSyncingPerformance ? "animate-spin" : ""}`} />
-                {metaSyncingPerformance ? "Sinkron..." : "Sinkron Meta"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={overviewSortBy}
+                  onChange={(e) => setOverviewSortBy(e.target.value as "createdAt" | "city" | "dailyBudget" | "durationDays" | "totalPayment")}
+                  className="h-8 rounded-md border bg-background px-2 text-xs"
+                >
+                  <option value="createdAt">Urut: Terbaru</option>
+                  <option value="city">Urut: Kota</option>
+                  <option value="dailyBudget">Urut: Budget/Hari</option>
+                  <option value="durationDays">Urut: Durasi</option>
+                  <option value="totalPayment">Urut: Total Bayar</option>
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-2 text-xs"
+                  onClick={() => setOverviewSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                >
+                  {overviewSortOrder === "asc" ? "A-Z / Kecil-Besar" : "Z-A / Besar-Kecil"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-2"
+                  onClick={async () => {
+                    await syncMetaPerformanceData(true)
+                    await fetchAdRequests(false, { page: 1, append: false })
+                  }}
+                  disabled={metaSyncingPerformance}
+                >
+                  <RefreshCcw className={`h-4 w-4 ${metaSyncingPerformance ? "animate-spin" : ""}`} />
+                  {metaSyncingPerformance ? "Sinkron..." : "Sinkron Meta"}
+                </Button>
+              </div>
+            </div>
+            {metaSyncStatus?.lastSuccess?.at && (
+              <p className="text-[11px] text-muted-foreground -mt-2">
+                Terakhir sinkron: {new Date(metaSyncStatus.lastSuccess.at).toLocaleString("id-ID")} • update {metaSyncStatus.lastSuccess.updatedCount} data
+              </p>
+            )}
+
+            <div className="w-full">
+              <Input
+                value={overviewSearch}
+                onChange={(e) => setOverviewSearch(e.target.value)}
+                placeholder="Cari kota atau promotor..."
+                className="h-9 text-sm"
+              />
             </div>
 
             <Tabs value={statusTab} onValueChange={setStatusTab} className="w-full">
@@ -1901,6 +2145,23 @@ export default function AdvertiserDashboard() {
                     </CardContent>
                   </Card>
                 ))
+              )}
+              {activeTab === "overview" && overviewHasMore && (
+                <div className="flex items-center justify-center pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      fetchAdRequests(false, {
+                        page: overviewPage + 1,
+                        append: true,
+                      })
+                    }
+                    disabled={loadingMoreOverview}
+                  >
+                    {loadingMoreOverview ? "Memuat..." : "Muat Lebih Banyak"}
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -2544,7 +2805,7 @@ export default function AdvertiserDashboard() {
                 {(payoutMonitor?.unpaidItems.length || 0) === 0 ? (
                   <p className="text-sm text-muted-foreground">Tidak ada item belum dicairkan.</p>
                 ) : (
-                  (payoutMonitor?.unpaidItems || []).map((item) => (
+                  paginatedPayoutUnpaidItems.map((item) => (
                     <div key={item.adRequestId} className="rounded-md bg-slate-50 p-2 text-xs">
                       <p className="font-medium">
                         {item.city} - {formatTestDate(item.startDate, item.testEndDate)} - {item.promotorName}
@@ -2555,13 +2816,38 @@ export default function AdvertiserDashboard() {
                     </div>
                   ))
                 )}
+                {payoutUnpaidItems.length > MONITOR_PAGE_SIZE && (
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">
+                      Halaman {payoutUnpaidPage} / {payoutUnpaidTotalPages}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={payoutUnpaidPage <= 1}
+                        onClick={() => setPayoutUnpaidPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Sebelumnya
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={payoutUnpaidPage >= payoutUnpaidTotalPages}
+                        onClick={() => setPayoutUnpaidPage((prev) => Math.min(payoutUnpaidTotalPages, prev + 1))}
+                      >
+                        Berikutnya
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-sm font-semibold pt-2">Riwayat Invoice Dicairkan</p>
               {(payoutMonitor?.paidBatches.length || 0) === 0 ? (
                 <p className="text-sm text-muted-foreground">Belum ada invoice pencairan.</p>
               ) : (
-                (payoutMonitor?.paidBatches || []).map((batch) => (
+                paginatedPayoutPaidBatches.map((batch) => (
                   <details key={batch.id} className="rounded-lg border p-3">
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
@@ -2595,6 +2881,31 @@ export default function AdvertiserDashboard() {
                     </div>
                   </details>
                 ))
+              )}
+              {payoutPaidBatches.length > MONITOR_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Halaman {payoutPaidPage} / {payoutPaidTotalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={payoutPaidPage <= 1}
+                      onClick={() => setPayoutPaidPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={payoutPaidPage >= payoutPaidTotalPages}
+                      onClick={() => setPayoutPaidPage((prev) => Math.min(payoutPaidTotalPages, prev + 1))}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -2660,7 +2971,7 @@ export default function AdvertiserDashboard() {
                 {(bonusMonitor?.unpaidItems.length || 0) === 0 ? (
                   <p className="text-sm text-muted-foreground">Tidak ada item bonus belum dicairkan.</p>
                 ) : (
-                  (bonusMonitor?.unpaidItems || []).map((item) => (
+                  paginatedBonusUnpaidItems.map((item) => (
                     <div key={item.promotorResultId} className="rounded-md bg-slate-50 p-2 text-xs">
                       <p className="font-medium">
                         {item.promotorName} - {item.city} - {formatTestDate(item.startDate, item.testEndDate)}
@@ -2671,13 +2982,38 @@ export default function AdvertiserDashboard() {
                     </div>
                   ))
                 )}
+                {bonusUnpaidItems.length > MONITOR_PAGE_SIZE && (
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">
+                      Halaman {bonusUnpaidPage} / {bonusUnpaidTotalPages}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={bonusUnpaidPage <= 1}
+                        onClick={() => setBonusUnpaidPage((prev) => Math.max(1, prev - 1))}
+                      >
+                        Sebelumnya
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={bonusUnpaidPage >= bonusUnpaidTotalPages}
+                        onClick={() => setBonusUnpaidPage((prev) => Math.min(bonusUnpaidTotalPages, prev + 1))}
+                      >
+                        Berikutnya
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-sm font-semibold pt-2">Riwayat Invoice Bonus Dicairkan</p>
               {(bonusMonitor?.paidBatches.length || 0) === 0 ? (
                 <p className="text-sm text-muted-foreground">Belum ada invoice bonus.</p>
               ) : (
-                (bonusMonitor?.paidBatches || []).map((batch) => (
+                paginatedBonusPaidBatches.map((batch) => (
                   <details key={batch.id} className="rounded-lg border p-3">
                     <summary className="cursor-pointer list-none">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
@@ -2711,6 +3047,31 @@ export default function AdvertiserDashboard() {
                     </div>
                   </details>
                 ))
+              )}
+              {bonusPaidBatches.length > MONITOR_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-muted-foreground">
+                    Halaman {bonusPaidPage} / {bonusPaidTotalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bonusPaidPage <= 1}
+                      onClick={() => setBonusPaidPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={bonusPaidPage >= bonusPaidTotalPages}
+                      onClick={() => setBonusPaidPage((prev) => Math.min(bonusPaidTotalPages, prev + 1))}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
