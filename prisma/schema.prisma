@@ -25,6 +25,8 @@ model User {
   promotorBonusBatches PromotorBonusBatch[]
   ownedProfileLinks    UserProfileLink[]    @relation("ProfileLinkOwner")
   linkedAsProfile      UserProfileLink[]    @relation("ProfileLinkProfile")
+  saldoRefund          Int                  @default(0)
+  unpaidPenalty        Int                  @default(0)
 }
 
 model UserProfileLink {
@@ -51,6 +53,7 @@ model AdRequest {
   ppn                Int
   totalPayment       Int
   saldoApplied       Int                 @default(0)
+  penaltyApplied     Int                 @default(0)
   status             String              @default("MENUNGGU_PEMBAYARAN")
   briefType          String?
   briefContent       String?

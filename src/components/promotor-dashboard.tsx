@@ -22,6 +22,7 @@ import {
   Building2,
   RefreshCcw,
   ArrowUpDown,
+  Info,
 } from "lucide-react"
 
 import {
@@ -50,6 +51,8 @@ import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { compressImage } from "@/lib/utils"
 import { buildCampaignName } from "@/lib/campaign-naming"
+import { fetchWithTimeout } from "@/lib/fetch-timeout"
+import { handleRequestError } from "@/lib/request-feedback"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +83,7 @@ interface AdRequest {
   ppn: number
   totalPayment: number
   saldoApplied?: number
+  penaltyApplied?: number
   status: string
   paymentProofUrl: string | null
   contentUrl: string | null
@@ -197,6 +201,7 @@ const statusConfig: Record<
   IKLAN_BERJALAN: { label: "Iklan Berjalan", variant: "outline", className: "border-purple-500 text-purple-700 bg-purple-50" },
   SELESAI: { label: "Iklan Selesai", variant: "secondary", className: "border-gray-400 text-gray-600 bg-gray-100" },
   FINAL: { label: "Final", variant: "default", className: "bg-slate-900 text-white border-slate-900" },
+  BATAL: { label: "Dibatalkan", variant: "destructive", className: "bg-red-50 text-red-700 border-red-200" },
 }
 
 const getStatusBadge = (status: string) => {
@@ -226,6 +231,8 @@ const STATUS_ORDER = [
   "IKLAN_DIJADWALKAN",
   "IKLAN_BERJALAN",
   "SELESAI",
+  "FINAL",
+  "BATAL"
 ]
 
 const isAtOrAfter = (status: string, target: string): boolean => {
@@ -275,6 +282,7 @@ export default function PromotorDashboard({
   const [allGlobalAds, setAllGlobalAds] = useState<AdRequest[]>([])
   const [mainTab, setMainTab] = useState(initialTab)
   const [pengajuanTab, setPengajuanTab] = useState<"PAY" | "WAIT_CONTENT" | "PROCESS_CONTENT" | "SCHEDULED" | "ACTIVE" | "DONE" | "FINAL">("PAY")
+  const [userProfile, setUserProfile] = useState<{ saldoRefund: number; unpaidPenalty: number } | null>(null)
   const [syncingGlobalAds, setSyncingGlobalAds] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -293,6 +301,8 @@ export default function PromotorDashboard({
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [uploadDialogId, setUploadDialogId] = useState<string | null>(null)
   const [resultDialogId, setResultDialogId] = useState<string | null>(null)
+  const [paymentDetailAd, setPaymentDetailAd] = useState<AdRequest | null>(null)
+  const [saldoDetailOpen, setSaldoDetailOpen] = useState(false)
 
   // Form state for create
   const [testMode, setTestMode] = useState<"1DAY" | "2DAYS">("1DAY")
@@ -321,9 +331,15 @@ export default function PromotorDashboard({
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [isCancelling, setIsCancelling] = useState<string | null>(null)
   const [waLink, setWaLink] = useState("")
   const activeSyncBusyRef = useRef(false)
   const loadedMainTabsRef = useRef(new Set<string>())
+  const adRequestsAbortRef = useRef<AbortController | null>(null)
+  const globalAdsAbortRef = useRef<AbortController | null>(null)
+  const metaSyncStatusAbortRef = useRef<AbortController | null>(null)
+  const metaSyncPostAbortRef = useRef<AbortController | null>(null)
+  const manualMetaSyncClickedAtRef = useRef(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -364,6 +380,27 @@ export default function PromotorDashboard({
       toast.success("Nama campaign siap dicopas")
     } catch {
       toast.error("Gagal menyalin nama campaign")
+    }
+  }
+
+  const handleCancel = async (id: string, message: string) => {
+    if (!confirm(message)) return
+
+    setIsCancelling(id)
+    try {
+      const res = await fetch(`/api/ad-requests/${id}/cancel`, {
+        method: "POST"
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal membatalkan iklan")
+      
+      toast.success(data.message || "Iklan berhasil dibatalkan")
+      fetchAdRequests()
+      fetchUserProfile()
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setIsCancelling(null)
     }
   }
 
@@ -434,33 +471,66 @@ export default function PromotorDashboard({
 
   const fetchAdRequests = useCallback(async () => {
     try {
-      const res = await fetch("/api/ad-requests?lite=1&view=promotor:main")
+      adRequestsAbortRef.current?.abort()
+      const controller = new AbortController()
+      adRequestsAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/ad-requests?lite=1&view=promotor:main", { signal: controller.signal }, 20000)
       if (!res.ok) {
         throw new Error("Gagal mengambil data")
       }
       const data: AdRequest[] = await res.json()
       setAdRequests(data)
-    } catch {
-      toast.error("Gagal memuat data pengajuan iklan")
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Muat data pengajuan timeout, coba lagi.",
+        errorMessage: "Gagal memuat data pengajuan iklan",
+      })
+      if (handled !== "error") return
     } finally {
       setLoading(false)
     }
   }, [])
 
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users/profile")
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setUserProfile(data.user)
+        }
+      }
+    } catch (err) {
+      console.error("Profile fetch error:", err)
+    }
+  }, [])
+
   const syncGlobalAdsFromMeta = useCallback(async () => {
+    if (activeSyncBusyRef.current) return
+    activeSyncBusyRef.current = true
     setSyncingGlobalAds(true)
     try {
-      const res = await fetch("/api/meta/sync-performance", {
+      metaSyncPostAbortRef.current?.abort()
+      const controller = new AbortController()
+      metaSyncPostAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/meta/sync-performance", {
         method: "POST",
-      })
+        signal: controller.signal,
+      }, 20000)
       if (!res.ok) return
       const data = await res.json()
       if (data?.ok && (data.linkedCount > 0 || data.updatedCount > 0)) {
         toast.success(`Sinkron Meta: ${data.linkedCount} mapping, ${data.updatedCount} data terbarui`)
       }
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Sinkron Meta timeout, coba lagi.",
+        showErrorToast: false,
+      })
+      if (handled !== "error") return
       // silent fail, UI tetap bisa pakai data terakhir
     } finally {
+      activeSyncBusyRef.current = false
       setSyncingGlobalAds(false)
     }
   }, [])
@@ -469,16 +539,26 @@ export default function PromotorDashboard({
     if (activeSyncBusyRef.current) return
     activeSyncBusyRef.current = true
     try {
-      const res = await fetch("/api/meta/sync-performance", {
+      metaSyncPostAbortRef.current?.abort()
+      const controller = new AbortController()
+      metaSyncPostAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/meta/sync-performance", {
         method: "POST",
-      })
+        signal: controller.signal,
+      }, 20000)
       if (!res.ok) return
       const data = await res.json()
       if (showToast && data?.ok && (data.linkedCount > 0 || data.updatedCount > 0)) {
         toast.success(`Sinkron Meta: ${data.linkedCount} mapping, ${data.updatedCount} data terbarui`)
       }
       await fetchAdRequests()
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Sinkron Meta timeout, coba lagi.",
+        showErrorToast: false,
+        showTimeoutToast: showToast,
+      })
+      if (handled !== "error") return
       // silent fail for background sync
     } finally {
       activeSyncBusyRef.current = false
@@ -490,7 +570,10 @@ export default function PromotorDashboard({
       await syncGlobalAdsFromMeta()
     }
     try {
-      const res = await fetch("/api/ad-requests?scope=all&lite=1&view=promotor:global")
+      globalAdsAbortRef.current?.abort()
+      const controller = new AbortController()
+      globalAdsAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/ad-requests?scope=all&lite=1&view=promotor:global", { signal: controller.signal }, 20000)
       if (!res.ok) {
         setGlobalAds([])
         setAllGlobalAds([])
@@ -503,11 +586,25 @@ export default function PromotorDashboard({
       // All confirmed ads (excluding unpaid) for lifetime count
       const confirmedAds = data.filter(ad => !["MENUNGGU_PEMBAYARAN", "MENUNGGU_VERIFIKASI_PEMBAYARAN"].includes(ad.status))
       setAllGlobalAds(confirmedAds)
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Muat data global timeout, coba lagi.",
+        showErrorToast: false,
+      })
+      if (handled !== "error") return
       setGlobalAds([])
       setAllGlobalAds([])
     }
   }, [syncGlobalAdsFromMeta])
+
+  useEffect(() => {
+    return () => {
+      adRequestsAbortRef.current?.abort()
+      globalAdsAbortRef.current?.abort()
+      metaSyncStatusAbortRef.current?.abort()
+      metaSyncPostAbortRef.current?.abort()
+    }
+  }, [])
 
   useEffect(() => {
     setGlobalPage(1)
@@ -531,7 +628,10 @@ export default function PromotorDashboard({
 
   const fetchMetaSyncStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/meta/sync-performance")
+      metaSyncStatusAbortRef.current?.abort()
+      const controller = new AbortController()
+      metaSyncStatusAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/meta/sync-performance", { signal: controller.signal }, 12000)
       if (!res.ok) return
       const data = await res.json()
       if (data?.ok) {
@@ -540,10 +640,21 @@ export default function PromotorDashboard({
           lastError: data.lastError || null,
         })
       }
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, { showErrorToast: false })
+      if (handled !== "error") return
       // silent
     }
   }, [])
+
+  const handleManualGlobalMetaSync = useCallback(async () => {
+    const now = Date.now()
+    if (now - manualMetaSyncClickedAtRef.current < 1200) return
+    manualMetaSyncClickedAtRef.current = now
+    if (syncingGlobalAds || activeSyncBusyRef.current) return
+    await fetchGlobalAds(true)
+    await fetchMetaSyncStatus()
+  }, [syncingGlobalAds, fetchGlobalAds, fetchMetaSyncStatus])
 
   useEffect(() => {
     if (!initialTab) return
@@ -553,10 +664,11 @@ export default function PromotorDashboard({
   useEffect(() => {
     if (user) {
       fetchAdRequests()
+      fetchUserProfile()
       fetchWaLink()
       fetchMetaSyncStatus()
     }
-  }, [user, fetchAdRequests, fetchWaLink, fetchMetaSyncStatus])
+  }, [user, fetchAdRequests, fetchUserProfile, fetchWaLink, fetchMetaSyncStatus])
 
   useEffect(() => {
     if (!user || !mainTab) return
@@ -676,14 +788,37 @@ export default function PromotorDashboard({
                     {formatRupiah(ad.dailyBudget)}
                   </p>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-tight font-medium">
-                    <DollarSign className="h-3 w-3" />
-                    Total Bayar
+                <div 
+                  className="space-y-0.5 cursor-pointer hover:bg-slate-50 p-2 -m-1 rounded-md transition-colors active:bg-slate-100"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setPaymentDetailAd(ad);
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-muted-foreground flex items-center gap-1 text-[10px] uppercase tracking-tight font-medium">
+                      <DollarSign className="h-3 w-3" />
+                      Total Bayar
+                    </p>
+                    <span className="text-[9px] text-blue-600 font-bold bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-0.5 border border-blue-100">
+                      <Info className="h-2.5 w-2.5" />
+                      Detail
+                    </span>
+                  </div>
+                  <p className="font-bold text-slate-800 text-[13px] border-b border-dotted border-slate-300 w-fit">
+                    {formatRupiah(ad.totalBudget + ad.ppn + (ad.penaltyApplied || 0))}
                   </p>
-                  <p className="font-bold text-slate-800 text-[13px]">
-                    {formatRupiah(ad.totalPayment)}
-                  </p>
+                  {ad.totalPayment === 0 && (
+                    <p className="text-[9px] text-emerald-600 font-medium italic mt-0.5">
+                      Lunas (Saldo)
+                    </p>
+                  )}
+                  {ad.totalPayment > 0 && ad.saldoApplied && ad.saldoApplied > 0 && (
+                    <p className="text-[9px] text-blue-600 font-medium italic mt-0.5">
+                      Sisa Bayar: {formatRupiah(ad.totalPayment)}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -746,8 +881,8 @@ export default function PromotorDashboard({
                             <p className="text-sm text-muted-foreground">
                               Total Pembayaran
                             </p>
-                            <p className="text-xl font-bold">
-                              {formatRupiah(ad.totalPayment)}
+                            <p className="font-semibold">
+                              {formatRupiah(ad.totalBudget + ad.ppn + (ad.penaltyApplied || 0))}
                             </p>
                           </div>
                           <div className="space-y-2">
@@ -809,6 +944,24 @@ export default function PromotorDashboard({
                       {isDeleting === ad.id ? "Menghapus..." : "Hapus"}
                     </Button>
                   </>
+                )}
+
+                {/* Batalkan Iklan: MENUNGGU_KONTEN, DIPROSES, KONTEN_SELESAI */}
+                {["MENUNGGU_KONTEN", "DIPROSES", "KONTEN_SELESAI"].includes(ad.status) && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800 border-red-200"
+                    onClick={() => {
+                      const msg = ad.status === "MENUNGGU_KONTEN"
+                        ? "Anda yakin ingin membatalkan pengajuan ini? Saldo Anda akan dikembalikan sepenuhnya."
+                        : "Anda yakin membatalkan pengajuan ini? Pembatalan dikenakan biaya Rp 20.000 yang langsung memotong saldo (saldo bisa menjadi minus)."
+                      handleCancel(ad.id, msg)
+                    }}
+                    disabled={isCancelling === ad.id}
+                  >
+                    {isCancelling === ad.id ? "Membatalkan..." : "Batalkan"}
+                  </Button>
                 )}
 
                 {/* KONTEN_SELESAI or later → WhatsApp Channel */}
@@ -1063,11 +1216,83 @@ export default function PromotorDashboard({
     [adRequests]
   )
   const totalSaldoUsed = useMemo(
-    () => adRequests.reduce((sum, r) => sum + (r.saldoApplied || 0), 0),
+    () => adRequests.reduce((sum, r) => {
+      if (r.status === "BATAL") return sum
+      return sum + (r.saldoApplied || 0)
+    }, 0),
     [adRequests]
   )
-  const totalSaldoTersedia = Math.max(totalLeftoverSaldo - totalSaldoUsed, 0)
+  
+  const refundSaldo = userProfile?.saldoRefund || 0
+  const totalSaldoTersedia = Math.max(totalLeftoverSaldo - totalSaldoUsed, 0) + refundSaldo
   const saldoSiapPakai = totalSaldoTersedia >= MIN_AUTO_SALDO_APPLY ? totalSaldoTersedia : 0
+  const saldoMutations = useMemo(() => {
+    const rows: Array<{
+      id: string
+      at: string
+      label: string
+      amount: number
+      flow: "IN" | "OUT"
+      sortRank: number
+    }> = []
+
+    for (const ad of adRequests) {
+      if (["SELESAI", "FINAL"].includes(ad.status) && ad.adReport?.amountSpent !== null && ad.adReport?.amountSpent !== undefined) {
+        const sisa = Math.max(ad.totalBudget - ad.adReport.amountSpent, 0)
+        if (sisa > 0) {
+          rows.push({
+            id: `${ad.id}-leftover`,
+            at: ad.updatedAt,
+            label: `Sisa budget iklan ${ad.city}`,
+            amount: sisa,
+            flow: "IN",
+            sortRank: 10,
+          })
+        }
+      }
+
+      if (ad.status === "BATAL") {
+        const refund = ad.totalPayment + (ad.saldoApplied || 0)
+        if (refund > 0) {
+          rows.push({
+            id: `${ad.id}-refund`,
+            at: ad.updatedAt,
+            label: `Refund pembatalan ${ad.city}`,
+            amount: refund,
+            flow: "IN",
+            sortRank: 1,
+          })
+        }
+        if ((ad.penaltyApplied || 0) > 0) {
+          rows.push({
+            id: `${ad.id}-penalty`,
+            at: ad.updatedAt,
+            label: `Denda pembatalan ${ad.city}`,
+            amount: -(ad.penaltyApplied || 0),
+            flow: "OUT",
+            sortRank: 2,
+          })
+        }
+      }
+
+      if ((ad.saldoApplied || 0) > 0 && ad.status !== "BATAL") {
+        rows.push({
+          id: `${ad.id}-used`,
+          at: ad.createdAt,
+          label: `Saldo dipakai untuk pengajuan ${ad.city}`,
+          amount: -(ad.saldoApplied || 0),
+          flow: "OUT",
+          sortRank: 20,
+        })
+      }
+    }
+
+    return rows.sort((a, b) => {
+      const byDate = new Date(b.at).getTime() - new Date(a.at).getTime()
+      if (byDate !== 0) return byDate
+      return a.sortRank - b.sortRank
+    })
+  }, [adRequests])
 
   // ── Create ad request ─────────────────────────────────────────────────────
 
@@ -1117,6 +1342,7 @@ export default function PromotorDashboard({
       setFormDailyBudget("")
       setFormNote("")
       fetchAdRequests()
+      fetchUserProfile()
     } catch (err: any) {
       toast.error(err.message || "Gagal membuat pengajuan")
     } finally {
@@ -1480,11 +1706,20 @@ export default function PromotorDashboard({
             </CardTitle>
             <DollarSign className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent className="px-2.5 pb-2.5 pt-0 sm:px-6 sm:pb-6">
-            <div className="text-lg sm:text-2xl font-bold text-emerald-600">{formatRupiah(totalSaldoTersedia)}</div>
+          <CardContent className="relative px-2.5 pb-2.5 pt-0 sm:px-6 sm:pb-6">
+            <div className={`text-lg sm:text-2xl font-bold ${totalSaldoTersedia < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+              {formatRupiah(totalSaldoTersedia)}
+            </div>
             <p className="hidden sm:block text-[10px] text-muted-foreground mt-1">
-              Akumulasi sisa budget dari iklan selesai/final
+              Sisa budget iklan & refund pembatalan
             </p>
+            <button
+              type="button"
+              onClick={() => setSaldoDetailOpen(true)}
+              className="absolute right-2.5 top-0 text-[10px] text-blue-600 hover:text-blue-700 underline underline-offset-2 sm:static sm:mt-0.5"
+            >
+              detail
+            </button>
           </CardContent>
         </Card>
       </div>
@@ -1525,7 +1760,7 @@ export default function PromotorDashboard({
                   Buat Pengajuan Iklan
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Buat Pengajuan Iklan</DialogTitle>
                   <DialogDescription>
@@ -1829,7 +2064,7 @@ export default function PromotorDashboard({
                             <td className="p-4">{formatTestDate(ad.startDate, ad.testEndDate)}</td>
                             <td className="p-4">{ad.durationDays} hari</td>
                             <td className="p-4">
-                              {formatRupiah(ad.totalPayment)}
+                              {formatRupiah(ad.totalBudget + ad.ppn + (ad.penaltyApplied || 0))}
                             </td>
                             <td className="p-4">
                               {getStatusBadge(ad.status)}
@@ -1860,7 +2095,7 @@ export default function PromotorDashboard({
                           </div>
                           <div className="space-y-0.5">
                             <span className="text-muted-foreground block text-[10px] uppercase font-bold">Budget</span>
-                            <span className="font-semibold text-[11px]">{formatRupiah(ad.totalPayment)}</span>
+                            <span className="font-semibold text-[11px]">{formatRupiah(ad.totalBudget + ad.ppn + (ad.penaltyApplied || 0))}</span>
                           </div>
                         </div>
                       </div>
@@ -1916,10 +2151,7 @@ export default function PromotorDashboard({
                 size="sm"
                 variant="outline"
                 className="gap-2"
-                onClick={async () => {
-                  await fetchGlobalAds(true)
-                  await fetchMetaSyncStatus()
-                }}
+                onClick={handleManualGlobalMetaSync}
                 disabled={syncingGlobalAds}
               >
                 <RefreshCcw className={`h-4 w-4 ${syncingGlobalAds ? "animate-spin" : ""}`} />
@@ -2212,6 +2444,70 @@ export default function PromotorDashboard({
         </TabsContent>
       </Tabs>
       {/* ── Edit Dialog ── */}
+      <Dialog open={saldoDetailOpen} onOpenChange={setSaldoDetailOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mutasi Saldo</DialogTitle>
+            <DialogDescription>
+              Riwayat pemasukan dan pemakaian saldo Anda.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="rounded-lg border bg-slate-50 px-3 py-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Saldo saat ini</span>
+                <span className={`font-bold ${totalSaldoTersedia < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                  {formatRupiah(totalSaldoTersedia)}
+                </span>
+              </div>
+            </div>
+
+            {saldoMutations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Belum ada mutasi saldo.</p>
+            ) : (
+              <div className="space-y-2">
+                {saldoMutations.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border px-3 py-2 ${
+                      item.flow === "IN"
+                        ? "border-emerald-200 bg-emerald-50/50"
+                        : "border-rose-200 bg-rose-50/50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              item.flow === "IN"
+                                ? "border-emerald-300 bg-emerald-100 text-emerald-700"
+                                : "border-rose-300 bg-rose-100 text-rose-700"
+                            }`}
+                          >
+                            {item.flow === "IN" ? "Masuk" : "Keluar"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatDate(item.at)}</p>
+                      </div>
+                      <span className={`text-sm font-bold whitespace-nowrap ${item.flow === "IN" ? "text-emerald-600" : "text-rose-600"}`}>
+                        {item.amount >= 0 ? "+" : "-"}{formatRupiah(Math.abs(item.amount))}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setSaldoDetailOpen(false)}>Tutup</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -2291,6 +2587,81 @@ export default function PromotorDashboard({
         </DialogContent>
       </Dialog>
 
+      {/* ── Payment Detail Dialog ────────────────────────────────────────── */}
+      <Dialog open={!!paymentDetailAd} onOpenChange={(open) => !open && setPaymentDetailAd(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rincian Pembayaran</DialogTitle>
+            <DialogDescription>
+              Detail biaya untuk iklan di <strong>{paymentDetailAd?.city}</strong>
+            </DialogDescription>
+          </DialogHeader>
+
+          {paymentDetailAd && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Biaya Iklan ({paymentDetailAd.durationDays} hari x {formatRupiah(paymentDetailAd.dailyBudget)})</span>
+                  <span className="font-medium">{formatRupiah(paymentDetailAd.totalBudget)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">PPN (11%)</span>
+                  <span className="font-medium">{formatRupiah(paymentDetailAd.ppn)}</span>
+                </div>
+                
+                { (paymentDetailAd.penaltyApplied || 0) > 0 && (
+                  <div className="flex justify-between text-sm text-red-600">
+                    <span className="flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      Denda Pembatalan
+                    </span>
+                    <span className="font-medium">+{formatRupiah(paymentDetailAd.penaltyApplied || 0)}</span>
+                  </div>
+                )}
+
+                <Separator className="my-1" />
+
+                <div className="flex justify-between text-sm font-semibold text-slate-900 border-t pt-2">
+                  <span>Subtotal Tagihan</span>
+                  <span>
+                    {formatRupiah((paymentDetailAd.totalBudget + paymentDetailAd.ppn + (paymentDetailAd.penaltyApplied || 0)))}
+                  </span>
+                </div>
+
+                { (paymentDetailAd.saldoApplied || 0) > 0 && (
+                  <div className="flex justify-between text-sm text-emerald-600 bg-emerald-50 p-2 rounded-md border border-emerald-100">
+                    <span className="flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3" />
+                      Potongan Saldo
+                    </span>
+                    <span className="font-bold">-{formatRupiah(paymentDetailAd.saldoApplied || 0)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl bg-slate-900 p-4 mt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-xs font-medium uppercase tracking-wider">Total yang Dibayar</span>
+                  <span className="text-white text-xl font-black">
+                    {formatRupiah(paymentDetailAd.totalPayment)}
+                  </span>
+                </div>
+                {paymentDetailAd.totalPayment === 0 && (
+                   <p className="text-emerald-400 text-[10px] mt-1 font-medium italic">
+                     * Lunas menggunakan saldo sisa
+                   </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setPaymentDetailAd(null)}>
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

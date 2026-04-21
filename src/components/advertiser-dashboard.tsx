@@ -59,6 +59,8 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { buildCampaignName } from "@/lib/campaign-naming"
+import { fetchWithTimeout } from "@/lib/fetch-timeout"
+import { handleRequestError } from "@/lib/request-feedback"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -595,6 +597,7 @@ export default function AdvertiserDashboard({
   const [overviewSortBy, setOverviewSortBy] = useState<"createdAt" | "city" | "dailyBudget" | "durationDays" | "totalPayment">("createdAt")
   const [overviewSortOrder, setOverviewSortOrder] = useState<"asc" | "desc">("desc")
   const [overviewPage, setOverviewPage] = useState(1)
+  const [overviewTotal, setOverviewTotal] = useState(0)
   const [overviewHasMore, setOverviewHasMore] = useState(false)
   const [loadingMoreOverview, setLoadingMoreOverview] = useState(false)
   const [hasLoadedFullAdRequests, setHasLoadedFullAdRequests] = useState(false)
@@ -698,6 +701,11 @@ export default function AdvertiserDashboard({
   const [metaDraftMode, setMetaDraftMode] = useState<MetaDraftMode>("GENERATE")
   const restoreConfigInputRef = useRef<HTMLInputElement | null>(null)
   const loadedTabsRef = useRef(new Set<string>())
+  const adRequestsAbortRef = useRef<AbortController | null>(null)
+  const metaSyncStatusAbortRef = useRef<AbortController | null>(null)
+  const metaSyncPostAbortRef = useRef<AbortController | null>(null)
+  const metaSyncBusyRef = useRef(false)
+  const manualMetaSyncClickedAtRef = useRef(0)
 
   useEffect(() => {
     if (!initialTab) return
@@ -870,7 +878,10 @@ export default function AdvertiserDashboard({
 
   const fetchMetaSyncStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/meta/sync-performance")
+      metaSyncStatusAbortRef.current?.abort()
+      const controller = new AbortController()
+      metaSyncStatusAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/meta/sync-performance", { signal: controller.signal }, 12000)
       if (!res.ok) return
       const data = await res.json()
       if (data?.ok) {
@@ -879,26 +890,43 @@ export default function AdvertiserDashboard({
           lastError: data.lastError || null,
         })
       }
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Sinkron Meta timeout, coba lagi.",
+        showErrorToast: false,
+      })
+      if (handled !== "error") return
       // silent
     }
   }, [])
 
   const syncMetaPerformanceData = useCallback(async (showToast = false) => {
+    if (metaSyncBusyRef.current) return
+    metaSyncBusyRef.current = true
     setMetaSyncingPerformance(true)
     try {
-      const res = await fetch("/api/meta/sync-performance", {
+      metaSyncPostAbortRef.current?.abort()
+      const controller = new AbortController()
+      metaSyncPostAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/meta/sync-performance", {
         method: "POST",
-      })
+        signal: controller.signal,
+      }, 20000)
       if (!res.ok) return
       const data = await res.json()
       if (showToast && data?.ok) {
         toast.success(`Sinkron Meta: ${data.linkedCount} mapping, ${data.updatedCount} data terbarui`)
       }
       await fetchMetaSyncStatus()
-    } catch {
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Sinkron Meta timeout, coba lagi.",
+        showErrorToast: false,
+      })
+      if (handled !== "error") return
       // silent fail; advertiser can still work with existing data
     } finally {
+      metaSyncBusyRef.current = false
       setMetaSyncingPerformance(false)
     }
   }, [fetchMetaSyncStatus])
@@ -924,14 +952,18 @@ export default function AdvertiserDashboard({
     const shouldUseOverviewPaging = activeTab === "overview" && !forceFull
 
     try {
-      if (append) setLoadingMoreOverview(true)
+      adRequestsAbortRef.current?.abort()
+      const controller = new AbortController()
+      adRequestsAbortRef.current = controller
+
+      if (shouldUseOverviewPaging) setLoadingMoreOverview(true)
       const query = new URLSearchParams()
       query.set("lite", "1")
       query.set("view", `advertiser:${activeTab}`)
       let url = "/api/ad-requests"
       if (shouldUseOverviewPaging) {
         query.set("page", String(page))
-        query.set("pageSize", "60")
+        query.set("pageSize", "15")
         query.set("sortBy", overviewSortBy)
         query.set("sortOrder", overviewSortOrder)
         if (debouncedOverviewSearch) {
@@ -945,7 +977,7 @@ export default function AdvertiserDashboard({
         url = `/api/ad-requests?${query.toString()}`
       }
 
-      const res = await fetch(url)
+      const res = await fetchWithTimeout(url, { signal: controller.signal }, 20000)
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data = await res.json()
       if (shouldUseOverviewPaging) {
@@ -956,6 +988,7 @@ export default function AdvertiserDashboard({
           setAdRequests(items)
         }
         setOverviewPage(data.pagination?.page || page)
+        setOverviewTotal(data.pagination?.total || items.length)
         setOverviewHasMore(Boolean(data.pagination?.hasMore))
         if (data.statusCounts) {
           setServerStatusCounts(data.statusCounts)
@@ -964,17 +997,43 @@ export default function AdvertiserDashboard({
       } else {
         setAdRequests(data)
         setOverviewPage(1)
+        setOverviewTotal(Array.isArray(data) ? data.length : 0)
         setOverviewHasMore(false)
         setServerStatusCounts(null)
         setHasLoadedFullAdRequests(true)
       }
-    } catch {
-      toast.error("Gagal memuat data pengajuan iklan")
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Muat data pengajuan timeout, coba lagi.",
+        errorMessage: "Gagal memuat data pengajuan iklan",
+      })
+      if (handled !== "error") return
     } finally {
       setLoadingMoreOverview(false)
       setLoading(false)
     }
   }, [activeTab, debouncedOverviewSearch, overviewSortBy, overviewSortOrder, statusTab, syncMetaPerformanceData])
+
+  const overviewTotalPages = Math.max(1, Math.ceil((overviewTotal || 0) / 15))
+  const overviewFirstItemNumber = overviewTotal === 0 ? 0 : (overviewPage - 1) * 15 + 1
+  const overviewLastItemNumber = Math.min(overviewPage * 15, overviewTotal)
+
+  const handleManualMetaSync = useCallback(async () => {
+    const now = Date.now()
+    if (now - manualMetaSyncClickedAtRef.current < 1200) return
+    manualMetaSyncClickedAtRef.current = now
+    if (metaSyncingPerformance || metaSyncBusyRef.current) return
+    await syncMetaPerformanceData(true)
+    await fetchAdRequests(false, { page: 1, append: false })
+  }, [metaSyncingPerformance, syncMetaPerformanceData, fetchAdRequests])
+
+  useEffect(() => {
+    return () => {
+      adRequestsAbortRef.current?.abort()
+      metaSyncStatusAbortRef.current?.abort()
+      metaSyncPostAbortRef.current?.abort()
+    }
+  }, [])
 
   const fetchBriefTemplates = useCallback(async () => {
     try {
@@ -1967,10 +2026,7 @@ export default function AdvertiserDashboard({
                   size="sm"
                   variant="outline"
                   className="h-8 gap-2"
-                  onClick={async () => {
-                    await syncMetaPerformanceData(true)
-                    await fetchAdRequests(false, { page: 1, append: false })
-                  }}
+                  onClick={handleManualMetaSync}
                   disabled={metaSyncingPerformance}
                 >
                   <RefreshCcw className={`h-4 w-4 ${metaSyncingPerformance ? "animate-spin" : ""}`} />
@@ -2231,21 +2287,42 @@ export default function AdvertiserDashboard({
                   </Card>
                 ))
               )}
-              {activeTab === "overview" && overviewHasMore && (
-                <div className="flex items-center justify-center pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      fetchAdRequests(false, {
-                        page: overviewPage + 1,
-                        append: true,
-                      })
-                    }
-                    disabled={loadingMoreOverview}
-                  >
-                    {loadingMoreOverview ? "Memuat..." : "Muat Lebih Banyak"}
-                  </Button>
+              {activeTab === "overview" && overviewTotalPages > 1 && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border rounded-md bg-white px-3 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    Menampilkan {overviewFirstItemNumber}-{overviewLastItemNumber} dari {overviewTotal} data
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        fetchAdRequests(false, {
+                          page: Math.max(1, overviewPage - 1),
+                          append: false,
+                        })
+                      }
+                      disabled={loadingMoreOverview || overviewPage <= 1}
+                    >
+                      Sebelumnya
+                    </Button>
+                    <span className="text-xs font-semibold text-slate-700">
+                      Hal {overviewPage}/{overviewTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        fetchAdRequests(false, {
+                          page: overviewPage + 1,
+                          append: false,
+                        })
+                      }
+                      disabled={loadingMoreOverview || !overviewHasMore}
+                    >
+                      Berikutnya
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

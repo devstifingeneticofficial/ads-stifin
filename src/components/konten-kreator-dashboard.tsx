@@ -58,6 +58,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import { fetchWithTimeout } from "@/lib/fetch-timeout"
+import { handleRequestError } from "@/lib/request-feedback"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,8 @@ interface AdRequest {
   city: string
   startDate: string
   testEndDate: string | null
+  adStartDate?: string | null
+  adEndDate?: string | null
   durationDays: number
   dailyBudget: number
   totalBudget: number
@@ -169,6 +173,42 @@ const formatTestDate = (start: string, end?: string | null) => {
     return `${s.getDate()} - ${e.getDate()} ${months[s.getMonth()]} ${s.getFullYear()}`
   }
   return `${s.getDate()} ${months[s.getMonth()]} - ${e.getDate()} ${months[e.getMonth()]} ${e.getFullYear()}`
+}
+
+const toJakartaDateAt = (date: Date, hour: number, minute: number) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value
+      return acc
+    }, {})
+
+  const year = Number(parts.year || "1970")
+  const month = Number(parts.month || "1")
+  const day = Number(parts.day || "1")
+  return new Date(Date.UTC(year, month - 1, day, hour - 7, minute, 0, 0))
+}
+
+const getEstimatedAdStartTime = (ad: AdRequest): number => {
+  if (ad.adStartDate) {
+    const explicit = new Date(ad.adStartDate).getTime()
+    if (Number.isFinite(explicit)) return explicit
+  }
+
+  const safeDuration = Math.max(1, ad.durationDays || 1)
+  const testReference = ad.testEndDate ? new Date(ad.testEndDate) : new Date(ad.startDate)
+  const defaultEnd = toJakartaDateAt(testReference, 21, 0)
+  defaultEnd.setUTCDate(defaultEnd.getUTCDate() - 1)
+
+  const startBaseDay = new Date(defaultEnd)
+  startBaseDay.setUTCDate(startBaseDay.getUTCDate() - safeDuration)
+  const defaultStart = toJakartaDateAt(startBaseDay, 16, 0)
+  return defaultStart.getTime()
 }
 
 const statusConfig: Record<
@@ -291,6 +331,7 @@ export default function KontenKreatorDashboard({
   const [readingNotifId, setReadingNotifId] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const adRequestsAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (!initialTab) return
@@ -301,20 +342,34 @@ export default function KontenKreatorDashboard({
 
   const fetchAdRequests = useCallback(async () => {
     try {
+      adRequestsAbortRef.current?.abort()
+      const controller = new AbortController()
+      adRequestsAbortRef.current = controller
+
       const statuses = ["MENUNGGU_KONTEN", "DIPROSES", "KONTEN_SELESAI", "IKLAN_BERJALAN", "SELESAI"]
       const query = new URLSearchParams({
         lite: "1",
         view: "kreator:main",
         statuses: statuses.join(","),
       })
-      const res = await fetch(`/api/ad-requests?${query.toString()}`)
+      const res = await fetchWithTimeout(`/api/ad-requests?${query.toString()}`, { signal: controller.signal }, 20000)
       if (!res.ok) throw new Error("Gagal mengambil data")
       const data: AdRequest[] = await res.json()
       setAdRequests(data)
-    } catch {
-      toast.error("Gagal memuat data pengajuan iklan")
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Muat antrean konten timeout, coba lagi.",
+        errorMessage: "Gagal memuat data pengajuan iklan",
+      })
+      if (handled !== "error") return
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      adRequestsAbortRef.current?.abort()
     }
   }, [])
 
@@ -395,6 +450,14 @@ export default function KontenKreatorDashboard({
         buckets.SELESAI.push(ad)
       }
     }
+
+    // Priority queue for creator: nearest ad schedule first.
+    buckets.MENUNGGU_KONTEN.sort((a, b) => {
+      const diff = getEstimatedAdStartTime(a) - getEstimatedAdStartTime(b)
+      if (diff !== 0) return diff
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    })
+
     return buckets
   }, [adRequests])
 

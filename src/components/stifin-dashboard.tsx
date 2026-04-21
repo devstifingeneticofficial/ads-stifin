@@ -50,6 +50,8 @@ import {
 } from "@/components/ui/select"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { compressImage } from "@/lib/utils"
+import { fetchWithTimeout } from "@/lib/fetch-timeout"
+import { handleRequestError } from "@/lib/request-feedback"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -369,6 +371,7 @@ export default function StifinDashboard({
   const [proofPreviewUrl, setProofPreviewUrl] = useState("")
   const [proofPreviewTitle, setProofPreviewTitle] = useState("Bukti Transfer")
   const loadedMainTabsRef = useRef(new Set<string>())
+  const adRequestsAbortRef = useRef<AbortController | null>(null)
 
   const tabStatusScope = useMemo<Record<string, string[]>>(
     () => ({
@@ -441,6 +444,10 @@ export default function StifinDashboard({
     const tab = targetTab || activeMainTab
     setLoading(true)
     try {
+      adRequestsAbortRef.current?.abort()
+      const controller = new AbortController()
+      adRequestsAbortRef.current = controller
+
       const query = new URLSearchParams()
       query.set("lite", "1")
       query.set("view", `stifin:${tab}`)
@@ -449,18 +456,28 @@ export default function StifinDashboard({
         query.set("statuses", scopedStatuses.join(","))
       }
 
-      const res = await fetch(`/api/ad-requests?${query.toString()}`)
+      const res = await fetchWithTimeout(`/api/ad-requests?${query.toString()}`, { signal: controller.signal }, 20000)
       if (!res.ok) {
         throw new Error("Gagal mengambil data")
       }
       const data: AdRequest[] = await res.json()
       setAdRequests(data)
-    } catch {
-      toast.error("Gagal memuat data pengajuan iklan")
+    } catch (error: any) {
+      const handled = handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Muat data dashboard timeout, coba lagi.",
+        errorMessage: "Gagal memuat data pengajuan iklan",
+      })
+      if (handled !== "error") return
     } finally {
       setLoading(false)
     }
   }, [activeMainTab, tabStatusScope])
+
+  useEffect(() => {
+    return () => {
+      adRequestsAbortRef.current?.abort()
+    }
+  }, [])
 
   const fetchPayoutData = useCallback(async () => {
     setPayoutLoading(true)

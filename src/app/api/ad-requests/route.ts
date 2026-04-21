@@ -263,6 +263,8 @@ export async function GET(req: Request) {
                 totalBudget: true,
                 ppn: true,
                 totalPayment: true,
+                saldoApplied: true,
+                penaltyApplied: true,
                 status: true,
                 briefType: true,
                 paymentProofUrl: true,
@@ -448,11 +450,34 @@ export async function POST(req: Request) {
       where: { promotorId: session.id },
       _sum: { saldoApplied: true },
     })
-    const usedSaldo = usedSaldoAgg._sum.saldoApplied || 0
-    const availableSaldo = Math.max(totalLeftover - usedSaldo, 0)
-    const saldoApplied =
-      availableSaldo >= MIN_AUTO_SALDO_APPLY ? Math.min(availableSaldo, grossPayment) : 0
-    const totalPayment = Math.max(grossPayment - saldoApplied, 0)
+    
+    // Saldo/refund & debt logic:
+    // - saldoRefund > 0  => saldo yang bisa dipakai
+    // - saldoRefund < 0  => utang (mis. denda pembatalan saat saldo kosong)
+    // - unpaidPenalty    => utang legacy lama (tetap didukung untuk kompatibilitas)
+    const userRecord = await db.user.findUnique({ where: { id: session.id } })
+    const saldoRefund = userRecord?.saldoRefund || 0
+    const unpaidPenalty = userRecord?.unpaidPenalty || 0
+    const outstandingDebt = Math.max(-saldoRefund, 0) + unpaidPenalty
+    const positiveRefundSaldo = Math.max(saldoRefund, 0)
+
+    const grossPaymentWithPenalty = grossPayment + outstandingDebt
+    const usedLeftoverSaldo = usedSaldoAgg._sum.saldoApplied || 0
+    const availableLeftover = Math.max(totalLeftover - usedLeftoverSaldo, 0)
+    
+    const availableSaldo = availableLeftover + positiveRefundSaldo
+    const saldoAppliedTotal =
+      availableSaldo >= MIN_AUTO_SALDO_APPLY ? Math.min(availableSaldo, grossPaymentWithPenalty) : 0
+    const totalPayment = Math.max(grossPaymentWithPenalty - saldoAppliedTotal, 0)
+    
+    let saldoRefundDeducted = 0
+    if (saldoAppliedTotal > 0) {
+      if (positiveRefundSaldo >= saldoAppliedTotal) {
+         saldoRefundDeducted = saldoAppliedTotal
+      } else {
+         saldoRefundDeducted = positiveRefundSaldo
+      }
+    }
 
     const campaignCode = await generateUniqueCampaignCode()
     const adRequest = await db.adRequest.create({
@@ -466,7 +491,9 @@ export async function POST(req: Request) {
         totalBudget,
         ppn,
         totalPayment,
-        saldoApplied,
+        saldoApplied: saldoAppliedTotal,
+        penaltyApplied: outstandingDebt,
+        status: totalPayment === 0 ? "MENUNGGU_KONTEN" : "MENUNGGU_PEMBAYARAN",
         briefType,
         briefContent,
         briefVO: finalVO,
@@ -478,6 +505,19 @@ export async function POST(req: Request) {
         promotor: { select: { name: true } },
       },
     })
+
+    // Deduct applied references from user automatically
+    if (outstandingDebt > 0 || saldoRefund !== 0 || saldoRefundDeducted > 0) {
+      await db.user.update({
+        where: { id: session.id },
+        data: {
+          unpaidPenalty: 0,
+          // debt (saldo negatif) dianggap sudah dimasukkan ke invoice request ini, jadi di-reset ke 0.
+          // bila sebelumnya saldo positif, hanya potong sesuai saldo yang dipakai.
+          saldoRefund: saldoRefund < 0 ? 0 : Math.max(positiveRefundSaldo - saldoRefundDeducted, 0),
+        }
+      })
+    }
 
     const campaignName = buildCampaignName({
       city,
@@ -492,16 +532,25 @@ export async function POST(req: Request) {
     await notifyRole(
       "ADVERTISER",
       "Pengajuan Iklan Baru",
-      `${adRequest.promotor.name} dari ${city} mengajukan iklan. Campaign: ${campaignName}. Menunggu pembayaran & konten.`,
+      `${adRequest.promotor.name} dari ${city} mengajukan iklan. Campaign: ${campaignName}. ${totalPayment === 0 ? "Otomatis LUNAS via Saldo." : "Menunggu pembayaran & konten."}`,
       "AD_REQUEST",
       adRequest.id
     )
 
     await notifyStifin(
       "Pengajuan Iklan Baru",
-      `Promotor ${adRequest.promotor.name} dari ${city} mengajukan iklan senilai Rp ${totalPayment.toLocaleString("id-ID")}${saldoApplied > 0 ? ` (saldo terpakai Rp ${saldoApplied.toLocaleString("id-ID")})` : ""}`,
+      `Promotor ${adRequest.promotor.name} dari ${city} mengajukan iklan senilai Rp ${totalPayment.toLocaleString("id-ID")}${saldoAppliedTotal > 0 ? ` (saldo terpakai Rp ${saldoAppliedTotal.toLocaleString("id-ID")})` : ""}`,
       "AD_REQUEST"
     )
+    // Trigger creator assignment immediately if auto-paid
+    if (adRequest.status === "MENUNGGU_KONTEN") {
+      try {
+        await runUnassignedQueueRepair()
+      } catch (e) {
+        console.error("Instant assignment error:", e)
+      }
+    }
+
     clearAdRequestsCache()
 
     return NextResponse.json(adRequest, { status: 201 })

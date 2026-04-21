@@ -1,7 +1,7 @@
 "use client"
 
 import { useAuth } from "@/lib/auth-context"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -34,6 +34,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
+import { fetchWithTimeout } from "@/lib/fetch-timeout"
+import { handleRequestError } from "@/lib/request-feedback"
 
 const navItems = [
   { key: "dashboard", label: "Dashboard", icon: Building2 },
@@ -58,6 +60,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [showNotif, setShowNotif] = useState(false)
   const [announcements, setAnnouncements] = useState<any[]>([])
   const [dismissedAnnouncementIds, setDismissedAnnouncementIds] = useState<string[]>([])
+  const notificationsAbortRef = useRef<AbortController | null>(null)
+  const announcementsAbortRef = useRef<AbortController | null>(null)
+  const notificationsLoadingRef = useRef(false)
+  const announcementsLoadingRef = useRef(false)
 
   // Profile Edit State
   const [profileDialogOpen, setProfileDialogOpen] = useState(false)
@@ -205,53 +211,70 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     }
   }
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
+    if (notificationsLoadingRef.current) return
+    notificationsLoadingRef.current = true
     try {
-      const res = await fetch("/api/notifications")
+      notificationsAbortRef.current?.abort()
+      const controller = new AbortController()
+      notificationsAbortRef.current = controller
+      const res = await fetchWithTimeout("/api/notifications", { signal: controller.signal }, 12000)
       const data = await res.json()
       setNotifications(data.notifications || [])
       setUnreadCount(data.unreadCount || 0)
-    } catch {
-      // silent fail
+    } catch (error: any) {
+      handleRequestError(error, {
+        timeoutMessage: "Koneksi lambat. Notifikasi belum terbarui.",
+        showTimeoutToast: false,
+        showErrorToast: false,
+      })
+    } finally {
+      notificationsLoadingRef.current = false
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (!user) return
 
-    const load = async () => {
-      try {
-        const res = await fetch("/api/notifications")
-        const data = await res.json()
-        setNotifications(data.notifications || [])
-        setUnreadCount(data.unreadCount || 0)
-      } catch {
-        // silent fail
-      }
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => {
+      clearInterval(interval)
+      notificationsAbortRef.current?.abort()
     }
-
-    load()
-    const interval = setInterval(load, 30000)
-    return () => clearInterval(interval)
-  }, [user])
+  }, [user, fetchNotifications])
 
   useEffect(() => {
     if (!user) return
 
     const loadAnnouncements = async () => {
+      if (announcementsLoadingRef.current) return
+      announcementsLoadingRef.current = true
       try {
-        const res = await fetch("/api/announcements")
+        announcementsAbortRef.current?.abort()
+        const controller = new AbortController()
+        announcementsAbortRef.current = controller
+        const res = await fetchWithTimeout("/api/announcements", { signal: controller.signal }, 12000)
         if (!res.ok) return
         const data = await res.json()
         setAnnouncements(data.announcements || [])
-      } catch {
-        // silent fail
+      } catch (error: any) {
+        handleRequestError(error, {
+          timeoutMessage: "Koneksi lambat. Pengumuman belum terbarui.",
+          showTimeoutToast: false,
+          showErrorToast: false,
+        })
+      } finally {
+        announcementsLoadingRef.current = false
       }
     }
 
     loadAnnouncements()
     const interval = setInterval(loadAnnouncements, 30000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      announcementsAbortRef.current?.abort()
+    }
   }, [user])
 
   const markAsRead = async (id: string) => {
